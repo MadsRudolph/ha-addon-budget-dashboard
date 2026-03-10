@@ -1,0 +1,216 @@
+
+/* Modern Budget Dashboard Theme */
+
+/* General App Styling */
+.stApp {
+    background-color: #0e1117;
+    font-family: 'Inter', sans-serif;
+}
+
+/* Custom Card Container */
+.css-card {
+    background-color: #1e2329;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 15px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border: 1px solid #2d333b;
+}
+
+/* Metric Cards */
+div[data-testid="metric-container"] {
+    background-color: #1e2329;
+    padding: 15px;
+    border-radius: 10px;
+    border: 1px solid #2d333b;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: transform 0.2s;
+}
+
+div[data-testid="metric-container"]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    border-color: #404854;
+}
+
+div[data-testid="metric-container"] label {
+    color: #8b949e !important;
+    font-size: 0.9rem !important;
+}
+
+div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+    color: #ecf0f1 !important;
+    font-size: 1.6rem !important;
+    font-weight: 600 !important;
+}
+
+/* Headings */
+h1, h2, h3 {
+    color: #ecf0f1 !important;
+    font-weight: 600 !important;
+}
+
+h1 {
+    font-size: 2.2rem !important;
+    margin-bottom: 1.5rem !important;
+}
+
+h2 {
+    font-size: 1.5rem !important; /* Smaller H2 */
+    margin-top: 1rem !important;
+    margin-bottom: 1rem !important;
+    color: #58a6ff !important; /* GitHub-like blue accent */
+}
+
+h3 {
+    font-size: 1.1rem !important;
+    color: #8b949e !important;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background-color: #161b22;
+    border-right: 1px solid #2d333b;
+}
+
+section[data-testid="stSidebar"] h1 {
+    font-size: 1.5rem !important;
+    color: #58a6ff !important;
+}
+
+/* Buttons */
+.stButton button {
+    background-color: #238636;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.stButton button:hover {
+    background-color: #2ea043;
+    border-color: #2ea043;
+}
+
+/* Tables / Dataframes */
+div[data-testid="stDataFrame"] {
+    border: 1px solid #2d333b;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Plots */
+.js-plotly-plot .plotly .modebar {
+    display: none !important;
+}
+
+/* Custom class for 'positive' value */
+.positive-val {
+    color: #2ecc71;
+    font-weight: bold;
+}
+
+/* Custom class for 'negative' value */
+.negative-val {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+/* Expander styling */
+.streamlit-expanderHeader {
+    background-color: #1e2329;
+    border-radius: 8px;
+    border: 1px solid #2d333b;
+}
+
+/* ──────────── Mobile Responsive ──────────── */
+
+@media (max-width: 768px) {
+    .main .block-container {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        padding-top: 1rem !important;
+        max-width: 100% !important;
+    }
+
+    div[data-testid="column"] {
+        width: 100% !important;
+        flex: 100% !important;
+        min-width: 100% !important;
+    }
+
+    div[data-testid="metric-container"] {
+        padding: 10px !important;
+        margin-bottom: 8px !important;
+    }
+
+    div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+        font-size: 1.3rem !important;
+    }
+
+    div[data-testid="metric-container"] label {
+        font-size: 0.8rem !important;
+    }
+
+    h1 { font-size: 1.6rem !important; }
+    h2 { font-size: 1.2rem !important; }
+
+    div[data-testid="stDataFrame"] {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .js-plotly-plot, .js-plotly-plot .plotly {
+        width: 100% !important;
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        -webkit-overflow-scrolling: touch;
+        gap: 0 !important;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        white-space: nowrap !important;
+        font-size: 0.85rem !important;
+        padding: 8px 12px !important;
+    }
+
+    section[data-testid="stSidebar"] {
+        min-width: 250px !important;
+        max-width: 250px !important;
+    }
+
+    input[type="number"],
+    input[type="text"],
+    .stTextInput input,
+    .stNumberInput input {
+        font-size: 16px !important;
+        min-height: 44px !important;
+    }
+
+    div[data-baseweb="select"] {
+        min-height: 44px !important;
+    }
+
+    .stButton button, .stDownloadButton button {
+        width: 100% !important;
+        min-height: 44px !important;
+        font-size: 1rem !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .main .block-container {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+
+    h1 { font-size: 1.3rem !important; }
+
+    div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+        font-size: 1.1rem !important;
+    }
+}

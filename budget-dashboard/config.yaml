@@ -1,0 +1,30 @@
+name: "Budget Dashboard"
+description: "Personal finance dashboard with Telegram bot"
+version: "1.0.5"
+slug: "budget-dashboard"
+arch:
+  - aarch64
+  - armv7
+init: false
+startup: application
+boot: auto
+ports:
+  8501/tcp: 8501
+ports_description:
+  8501/tcp: "Streamlit Dashboard"
+map:
+  - share:rw
+options:
+  telegram_bot_token: ""
+  anthropic_api_key: ""
+  gcal_ics_url: ""
+  gcal_shift_keyword: "Working time"
+  enablebanking_app_id: ""
+  enablebanking_session_id: ""
+schema:
+  telegram_bot_token: str?
+  anthropic_api_key: str?
+  gcal_ics_url: str?
+  gcal_shift_keyword: str?
+  enablebanking_app_id: str?
+  enablebanking_session_id: str?
