@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.9] - 2026-03-11
+
+### Fixed
+- Net worth now uses real account balance from Enable Banking API instead of unreliable per-transaction balance
+- Balance recalculation works backwards from real API balance for accurate history
+- Sync starts from latest DB date to prevent CSV/API duplicate transactions
+
+---
+
 ## [1.0.8] - 2026-03-11
 
 ### Changed

@@ -168,9 +168,10 @@ def get_session(session_id: str) -> dict:
     return resp.json()
 
 
-def fetch_transactions(account_uid: str) -> list[dict]:
+def fetch_transactions(account_uid: str, date_from: str | None = None) -> list[dict]:
     """Fetch booked transactions for an account with pagination."""
-    date_from = (datetime.now() - timedelta(days=DAYS_BACK)).strftime("%Y-%m-%d")
+    if not date_from:
+        date_from = (datetime.now() - timedelta(days=DAYS_BACK)).strftime("%Y-%m-%d")
     all_txns = []
     params = {"date_from": date_from}
 
@@ -192,6 +193,53 @@ def fetch_transactions(account_uid: str) -> list[dict]:
         params = {"continuation_key": cont_key}
 
     return all_txns
+
+
+def fetch_balance(account_uid: str) -> float:
+    """Fetch the current available account balance."""
+    resp = requests.get(
+        f"{BASE_URL}/accounts/{account_uid}/balances",
+        headers=_auth_headers(),
+        timeout=TIMEOUT,
+    )
+    resp.raise_for_status()
+    for bal in resp.json().get("balances", []):
+        # Prefer ITAV (available balance) over ITBD (booked balance)
+        if bal.get("balance_type") == "ITAV":
+            return float(bal["balance_amount"]["amount"])
+    # Fallback to first balance
+    balances = resp.json().get("balances", [])
+    if balances:
+        return float(balances[0]["balance_amount"]["amount"])
+    return 0.0
+
+
+def recalculate_balances(conn, current_balance: float) -> None:
+    """Recalculate all transaction balances working backwards from the real
+    current balance.
+
+    Sorts transactions by date DESC, id DESC (newest first), then assigns
+    balances: newest gets current_balance, each older row gets
+    balance = next_row_balance - next_row_amount.
+    """
+    rows = conn.execute(
+        "SELECT id, amount FROM transactions ORDER BY date DESC, id DESC"
+    ).fetchall()
+    if not rows:
+        return
+
+    balance = current_balance
+    updates = []
+    for row_id, amount in rows:
+        updates.append((balance, row_id))
+        # Work backwards: the previous transaction's balance is
+        # this balance minus this transaction's amount
+        balance -= amount
+
+    conn.executemany(
+        "UPDATE transactions SET balance = ? WHERE id = ?", updates
+    )
+    conn.commit()
 
 
 def normalize_transactions(raw: list[dict]) -> list[dict]:
@@ -230,20 +278,13 @@ def normalize_transactions(raw: list[dict]) -> list[dict]:
         # Auto-categorize
         cat, subcat = _categorize(description)
 
-        # Balance after transaction (if provided by API)
-        bal_info = tx.get("balance_after_transaction", {})
-        try:
-            balance = float(bal_info.get("amount", 0))
-        except (ValueError, TypeError):
-            balance = 0
-
         rows.append({
             "date": tx_date,
             "category": cat,
             "subcategory": subcat,
             "description": description,
             "amount": amount,
-            "balance": balance,
+            "balance": 0,  # recalculated after sync from real API balance
         })
     return rows
 
@@ -270,25 +311,47 @@ def sync() -> int:
             "Re-run 'python bank_sync.py --link' to authorise again."
         )
 
+    # Determine start date: use latest DB date to avoid overlap with
+    # CSV-imported data (which has different description formatting)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    last_date = conn.execute(
+        "SELECT MAX(date) FROM transactions"
+    ).fetchone()[0]
+    conn.close()
+
+    if last_date:
+        date_from = last_date  # fetch from last known date (inclusive to catch same-day)
+    else:
+        date_from = None  # fall back to DAYS_BACK
+
     all_raw = []
+    first_uid = None
     for uid in account_uids:
         if isinstance(uid, str):
-            all_raw.extend(fetch_transactions(uid))
+            all_raw.extend(fetch_transactions(uid, date_from))
+            if not first_uid:
+                first_uid = uid
         elif isinstance(uid, dict):
-            # Fallback: if accounts contains dicts (e.g. from create_session)
             acct_uid = uid.get("uid", "")
             if acct_uid:
-                all_raw.extend(fetch_transactions(acct_uid))
+                all_raw.extend(fetch_transactions(acct_uid, date_from))
+                if not first_uid:
+                    first_uid = acct_uid
 
     rows = normalize_transactions(all_raw)
-    if not rows:
-        return 0
 
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     try:
         from db import init_db, insert_transactions
         init_db(conn)
-        new_count, _ = insert_transactions(conn, rows)
+        new_count = 0
+        if rows:
+            new_count, _ = insert_transactions(conn, rows)
+
+        # Fetch real balance and recalculate all stored balances
+        if first_uid:
+            real_balance = fetch_balance(first_uid)
+            recalculate_balances(conn, real_balance)
     finally:
         conn.close()
 
