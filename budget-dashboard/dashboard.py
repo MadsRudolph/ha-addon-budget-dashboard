@@ -1897,6 +1897,94 @@ def generate_alerts(df, budget_map, current_month_str):
     return alerts[:5]
 
 
+# ──────────────────────────── Balance-Aware Budget ────────────────────────────
+
+
+def detect_upcoming_bills(df):
+    """Detect recurring bills and calculate upcoming amounts for this month.
+
+    Returns (upcoming_amount, total_monthly, recurring_df_or_None).
+    - upcoming_amount: sum of bills expected but not yet paid this month
+    - total_monthly: total recurring monthly bills
+    - recurring: DataFrame of recurring bill details (or None)
+    """
+    all_expenses = df[df["amount"] < 0].copy()
+    if all_expenses.empty:
+        return 0, 0, None
+
+    all_expenses["day"] = pd.to_datetime(all_expenses["date"]).dt.day
+    all_expenses["abs_amt"] = all_expenses["amount"].abs()
+
+    bill_candidates = (
+        all_expenses.groupby("description")
+        .agg(
+            months=("month", "nunique"),
+            avg_amount=("abs_amt", "mean"),
+            std_amount=("abs_amt", "std"),
+            avg_day=("day", "mean"),
+            count=("description", "count"),
+        )
+        .reset_index()
+    )
+    bill_candidates["std_amount"] = bill_candidates["std_amount"].fillna(0)
+    bill_candidates["cv"] = bill_candidates["std_amount"] / bill_candidates["avg_amount"].replace(0, 1)
+
+    recurring = bill_candidates[
+        (bill_candidates["months"] >= 3)
+        & (bill_candidates["cv"] < 0.35)
+        & ((bill_candidates["count"] / bill_candidates["months"]) < 2.5)
+    ].sort_values("avg_day")
+
+    # Exclude grocery-like categories
+    grocery_descs = set(
+        all_expenses[all_expenses["category"].isin(
+            ["Dagligvarer", "Fornøjelser og fritid", "Snus"]
+        )]["description"].unique()
+    )
+    recurring = recurring[~recurring["description"].isin(grocery_descs)]
+
+    if recurring.empty:
+        return 0, 0, None
+
+    today_day = date.today().day
+    total_monthly = recurring["avg_amount"].sum()
+    upcoming_amount = recurring[
+        recurring["avg_day"].apply(lambda d: int(round(d)) > today_day)
+    ]["avg_amount"].sum()
+
+    return upcoming_amount, total_monthly, recurring
+
+
+def calculate_balance_aware_budget(current_balance, budget_map, cat_spending,
+                                   upcoming_bills_amount):
+    """Adjust remaining budget per category based on actual account balance.
+
+    Returns (adjusted_remaining_dict, is_constrained, available_after_bills).
+    When balance can cover full remaining budget, returns static amounts unchanged.
+    When balance is tight, scales all remaining amounts proportionally.
+    """
+    static_remaining = {}
+    for cat, limit in budget_map.items():
+        if limit <= 0:
+            continue
+        spent = cat_spending.get(cat, 0)
+        static_remaining[cat] = max(limit - spent, 0)
+
+    total_static_remaining = sum(static_remaining.values())
+    available = current_balance - upcoming_bills_amount
+
+    if available <= 0:
+        return {cat: 0 for cat in static_remaining}, True, available
+
+    if available >= total_static_remaining:
+        return static_remaining, False, available
+
+    # Scale down proportionally
+    scale = available / total_static_remaining if total_static_remaining > 0 else 0
+    adjusted = {cat: rem * scale for cat, rem in static_remaining.items()}
+    return adjusted, True, available
+
+
 # ──────────────────────────── Overview ────────────────────────────
 
 def render_overview(df, budgets_df, budget_map, conn):
@@ -2085,7 +2173,7 @@ def render_overview(df, budgets_df, budget_map, conn):
         total_budget = sum(v for v in budget_map.values() if v > 0)
         current_month_expenses = df[(df["month"] == current_month_str) & (df["amount"] < 0)].copy()
         total_spent = abs(current_month_expenses["amount"].sum()) if not current_month_expenses.empty else 0
-        total_remaining = max(total_budget - total_spent, 0)
+        static_remaining = max(total_budget - total_spent, 0)
 
         # Days left in month
         today = date.today()
@@ -2094,7 +2182,35 @@ def render_overview(df, budgets_df, budget_map, conn):
         else:
             last_day = date(today.year, today.month + 1, 1) - timedelta(days=1)
         days_left = max((last_day - today).days, 1)
-        daily_allowance = total_remaining / days_left
+        days_in_month = last_day.day
+        days_elapsed = max(today.day, 1)
+
+        # Per-category spending
+        cat_spending = current_month_expenses.groupby("category")["amount"].sum().abs() if not current_month_expenses.empty else pd.Series(dtype=float)
+
+        # ── Balance-aware budget adjustment ──
+        upcoming_bills, _, _ = detect_upcoming_bills(df)
+        adjusted_remaining, is_constrained, available_after_bills = \
+            calculate_balance_aware_budget(
+                current_balance, budget_map, cat_spending, upcoming_bills
+            )
+        total_adjusted_remaining = sum(adjusted_remaining.values())
+        effective_remaining = total_adjusted_remaining if is_constrained else static_remaining
+        daily_allowance = effective_remaining / days_left
+
+        # Balance warning
+        if is_constrained:
+            if available_after_bills <= 0:
+                st.error(
+                    f"**Balance: {current_balance:,.0f} DKK** — upcoming bills ({upcoming_bills:,.0f} DKK) "
+                    f"exceed your balance. Avoid all non-essential spending."
+                )
+            else:
+                st.warning(
+                    f"**Budget adjusted to your balance** ({current_balance:,.0f} DKK). "
+                    f"After upcoming bills ({upcoming_bills:,.0f} DKK), "
+                    f"you have **{available_after_bills:,.0f} DKK** to spend."
+                )
 
         # Budget KPIs
         bk1, bk2, bk3, bk4 = st.columns(4)
@@ -2102,29 +2218,30 @@ def render_overview(df, budgets_df, budget_map, conn):
         bk2.metric("Spent", f"{total_spent:,.0f} DKK",
                     f"{total_spent / total_budget * 100:.0f}%" if total_budget > 0 else None,
                     delta_color="inverse")
-        bk3.metric("Remaining", f"{total_remaining:,.0f} DKK",
-                    f"{days_left} days left", delta_color="off")
+        remaining_help = f"Budget says {static_remaining:,.0f}, but balance only covers {total_adjusted_remaining:,.0f}" if is_constrained else None
+        bk3.metric("Can Spend", f"{effective_remaining:,.0f} DKK",
+                    f"{days_left} days left", delta_color="off",
+                    help=remaining_help)
         bk4.metric("Daily Allowance", f"{daily_allowance:,.0f} DKK",
                     "spend limit per day", delta_color="off")
 
-        # Per-category budget bars with end-of-month prediction
-        cat_spending = current_month_expenses.groupby("category")["amount"].sum().abs() if not current_month_expenses.empty else pd.Series(dtype=float)
-        days_in_month = last_day.day
-        days_elapsed = max(today.day, 1)
-
+        # Per-category budget bars
         budget_rows = []
         for cat, limit in sorted(budget_map.items(), key=lambda x: x[1], reverse=True):
             if limit <= 0:
                 continue
             spent = cat_spending.get(cat, 0)
             pct = spent / limit * 100 if limit > 0 else 0
-            left = max(limit - spent, 0)
+            static_left = max(limit - spent, 0)
+            adj_left = adjusted_remaining.get(cat, static_left)
+            effective_left = adj_left if is_constrained else static_left
             # Predict end-of-month: spending velocity projection
             projected = (spent / days_elapsed) * days_in_month if days_elapsed > 0 else spent
             proj_pct = projected / limit * 100 if limit > 0 else 0
             budget_rows.append({
                 "category": cat, "budget": limit, "spent": spent,
-                "remaining": left, "pct": pct, "over": spent > limit,
+                "remaining": effective_left, "static_remaining": static_left,
+                "pct": pct, "over": spent > limit,
                 "projected": projected, "proj_pct": proj_pct,
             })
 
@@ -2133,13 +2250,14 @@ def render_overview(df, budgets_df, budget_map, conn):
             status = "🔴" if row["over"] else ("🟡" if row["pct"] > 75 else "🟢")
             bc1.markdown(f"{status} **{row['category']}**")
             bc2.markdown(f"**{row['spent']:,.0f}** / {row['budget']:,.0f}")
-            # Show prediction if not already over
-            if not row["over"] and row["proj_pct"] > 100:
-                bc3.markdown(f"~{row['projected']:,.0f} projected")
-            elif not row["over"]:
-                bc3.markdown(f"{row['remaining']:,.0f} left")
-            else:
+            if row["over"]:
                 bc3.markdown("**OVER**")
+            elif is_constrained:
+                bc3.markdown(f"**{row['remaining']:,.0f}** left")
+            elif row["proj_pct"] > 100:
+                bc3.markdown(f"~{row['projected']:,.0f} projected")
+            else:
+                bc3.markdown(f"{row['remaining']:,.0f} left")
             pct_clamped = min(row["pct"] / 100, 1.0)
             st.progress(pct_clamped)
 
@@ -2237,66 +2355,31 @@ def render_overview(df, budgets_df, budget_map, conn):
 
     # ── 3c. Upcoming Bills Calendar ──
     st.subheader("Upcoming Bills")
-    all_expenses = df[df["amount"] < 0].copy()
-    if not all_expenses.empty:
-        # Detect recurring bills: items appearing in 3+ months on similar days
-        all_expenses["day"] = pd.to_datetime(all_expenses["date"]).dt.day
-        all_expenses["abs_amt"] = all_expenses["amount"].abs()
+    upcoming_amt, total_monthly_bills, recurring = detect_upcoming_bills(df)
+    if recurring is not None and not recurring.empty:
+        today_day = date.today().day
+        bill_rows = []
+        for _, row in recurring.iterrows():
+            expected_day = int(round(row["avg_day"]))
+            status = "Paid" if expected_day <= today_day else "Upcoming"
+            bill_rows.append({
+                "Day": expected_day,
+                "Bill": row["description"][:35],
+                "Amount": f"{row['avg_amount']:,.0f} DKK",
+                "Status": status,
+            })
 
-        bill_candidates = (
-            all_expenses.groupby("description")
-            .agg(
-                months=("month", "nunique"),
-                avg_amount=("abs_amt", "mean"),
-                std_amount=("abs_amt", "std"),
-                avg_day=("day", "mean"),
-                count=("description", "count"),
-            )
-            .reset_index()
-        )
-        bill_candidates["std_amount"] = bill_candidates["std_amount"].fillna(0)
-        bill_candidates["cv"] = bill_candidates["std_amount"] / bill_candidates["avg_amount"].replace(0, 1)
+        bill_df_display = pd.DataFrame(bill_rows)
+        bc1, bc2, bc3 = st.columns(3)
+        bc1.metric("Monthly Bills", f"{total_monthly_bills:,.0f} DKK", f"{len(recurring)} recurring")
+        bc2.metric("Still Due This Month", f"{upcoming_amt:,.0f} DKK")
+        remaining_after_bills = (last_balance - upcoming_amt) if last_balance else -upcoming_amt
+        bc3.metric("After Bills", f"{remaining_after_bills:,.0f} DKK")
 
-        # Filter: at least 3 months, low CV (consistent amount), not too many per month
-        recurring = bill_candidates[
-            (bill_candidates["months"] >= 3)
-            & (bill_candidates["cv"] < 0.35)
-            & ((bill_candidates["count"] / bill_candidates["months"]) < 2.5)
-        ].sort_values("avg_day")
-
-        # Exclude grocery-like categories
-        grocery_descs = set(
-            all_expenses[all_expenses["category"].isin(["Dagligvarer", "Fornøjelser og fritid"])]["description"].unique()
-        )
-        recurring = recurring[~recurring["description"].isin(grocery_descs)]
-
-        if not recurring.empty:
-            today_day = date.today().day
-            bill_rows = []
-            for _, row in recurring.iterrows():
-                expected_day = int(round(row["avg_day"]))
-                status = "Paid" if expected_day <= today_day else "Upcoming"
-                bill_rows.append({
-                    "Day": expected_day,
-                    "Bill": row["description"][:35],
-                    "Amount": f"{row['avg_amount']:,.0f} DKK",
-                    "Status": status,
-                })
-
-            bill_df_display = pd.DataFrame(bill_rows)
-            total_bills = recurring["avg_amount"].sum()
-            upcoming_bills = recurring[recurring["avg_day"].apply(lambda d: int(round(d)) > today_day)]["avg_amount"].sum()
-
-            bc1, bc2, bc3 = st.columns(3)
-            bc1.metric("Monthly Bills", f"{total_bills:,.0f} DKK", f"{len(recurring)} recurring")
-            bc2.metric("Still Due This Month", f"{upcoming_bills:,.0f} DKK")
-            remaining_after_bills = (last_balance - upcoming_bills) if last_balance else -upcoming_bills
-            bc3.metric("After Bills", f"{remaining_after_bills:,.0f} DKK")
-
-            with st.expander(f"Bill schedule ({len(recurring)} items)", expanded=False):
-                st.dataframe(bill_df_display, use_container_width=True, hide_index=True)
-        else:
-            st.caption("Not enough history to detect recurring bills yet.")
+        with st.expander(f"Bill schedule ({len(recurring)} items)", expanded=False):
+            st.dataframe(bill_df_display, use_container_width=True, hide_index=True)
+    else:
+        st.caption("Not enough history to detect recurring bills yet.")
     st.markdown("---")
 
     # ── 4. Main Visuals ──

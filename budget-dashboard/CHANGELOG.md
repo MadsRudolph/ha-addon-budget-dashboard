@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.19] - 2026-03-11
+
+### Added
+- **Balance-aware budget system** — remaining amounts now adapt to actual account balance
+- When balance is low, all category budgets scale down proportionally to prevent overdraft
+- Warning banner shows when budget is balance-constrained with available amount after bills
+- "Can Spend" KPI replaces static "Remaining" — shows what you can actually spend
+- Daily allowance reflects real spending power, not just budget math
+
+---
+
 ## [1.0.18] - 2026-03-11
 
 ### Fixed
