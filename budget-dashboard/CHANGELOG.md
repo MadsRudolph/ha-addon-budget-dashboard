@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.17] - 2026-03-11
+
+### Fixed
+- SU Grant inflated by ~8,000 DKK — combined grant+loan payments (Jan/Feb 2026) now split correctly
+- Uses median of normal grant payments (~6,519 DKK) to detect combined transfers > 8,000 DKK
+
+---
+
 ## [1.0.16] - 2026-03-11
 
 ### Fixed

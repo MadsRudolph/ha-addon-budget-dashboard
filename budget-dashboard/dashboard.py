@@ -675,21 +675,49 @@ def main():
 
 
 
-SU_LOAN_MAX = 4000  # SU loan payments are below this threshold (max ~3,700 DKK + adjustments)
+SU_LOAN_MAX = 4000   # SU loan payments are below this threshold
+SU_COMBINED_MIN = 8000  # Above this = likely grant + loan combined in one transfer
 
 
 def classify_income(df):
     """Split income transactions into SU Grant, SU Loan, and Other.
 
-    SU loan payments are always <= 3,700 DKK (government max).
-    Anything labelled SU above that threshold is the grant.
+    Handles three cases:
+    - Small SU payment (<= 4,000): SU loan
+    - Normal SU payment (4,000-8,000): SU grant
+    - Large SU payment (> 8,000): combined grant+loan — split using
+      the median of normal grant payments as the grant portion.
     """
     income = df[df["amount"] > 0].copy()
     su_all = income[income["subcategory"].str.contains("SU", case=False, na=False)].copy()
     other = income[~income["subcategory"].str.contains("SU", case=False, na=False)].copy()
 
-    su_grant = su_all[su_all["amount"] > SU_LOAN_MAX].copy()
-    su_loan = su_all[su_all["amount"] <= SU_LOAN_MAX].copy()
+    if su_all.empty:
+        return su_all, su_all.iloc[0:0], other
+
+    # Find typical grant amount from normal (non-combined) grant payments
+    normal_grants = su_all[(su_all["amount"] > SU_LOAN_MAX) & (su_all["amount"] <= SU_COMBINED_MIN)]
+    typical_grant = normal_grants["amount"].median() if not normal_grants.empty else 6519
+
+    # Split combined payments into grant + loan rows
+    combined = su_all[su_all["amount"] > SU_COMBINED_MIN].copy()
+    pure_grant = su_all[(su_all["amount"] > SU_LOAN_MAX) & (su_all["amount"] <= SU_COMBINED_MIN)].copy()
+    pure_loan = su_all[su_all["amount"] <= SU_LOAN_MAX].copy()
+
+    if not combined.empty:
+        # Create virtual grant rows (typical grant amount)
+        grant_from_combined = combined.copy()
+        grant_from_combined["amount"] = typical_grant
+
+        # Create virtual loan rows (remainder)
+        loan_from_combined = combined.copy()
+        loan_from_combined["amount"] = combined["amount"] - typical_grant
+
+        su_grant = pd.concat([pure_grant, grant_from_combined], ignore_index=True)
+        su_loan = pd.concat([pure_loan, loan_from_combined], ignore_index=True)
+    else:
+        su_grant = pure_grant
+        su_loan = pure_loan
 
     return su_grant, su_loan, other
 

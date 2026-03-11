@@ -1,6 +1,6 @@
 name: "Budget Dashboard"
 description: "Personal finance dashboard with Telegram bot"
-version: "1.0.16"
+version: "1.0.17"
 slug: "budget-dashboard"
 arch:
   - aarch64
