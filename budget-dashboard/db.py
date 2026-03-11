@@ -87,6 +87,21 @@ def init_db(conn):
             updated_at TEXT DEFAULT (datetime('now'))
         );
     """)
+    # Default budget targets (INSERT OR IGNORE = won't overwrite user changes)
+    default_budgets = [
+        ("Bolig", 3500),
+        ("Dagligvarer", 3200),
+        ("Øvrige udgifter", 2000),
+        ("Fornøjelser og fritid", 1200),
+        ("Snus", 800),
+        ("Transport", 800),
+        ("Tøj, sko og personlig pleje", 400),
+        ("Personforsikringer", 100),
+    ]
+    conn.executemany(
+        "INSERT OR IGNORE INTO budgets (category, monthly_limit) VALUES (?, ?)",
+        default_budgets,
+    )
     conn.commit()
 
 @st.cache_data(ttl=60)

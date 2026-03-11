@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.16] - 2026-03-11
+
+### Fixed
+- NameError in auto_categorize (`snus_count` → `gas_count`)
+- Budget targets now set as defaults in `init_db` so they apply on fresh HA databases
+
+---
+
 ## [1.0.15] - 2026-03-11
 
 ### Fixed

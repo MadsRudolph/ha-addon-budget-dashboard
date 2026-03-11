@@ -191,7 +191,7 @@ def auto_categorize(conn, dry_run=False):
         conn.commit()
         load_transactions.clear()
 
-    return len(changes) + snus_count
+    return len(changes) + gas_count
 
 
 # ──────────────────────────── Gamification ────────────────────────────
