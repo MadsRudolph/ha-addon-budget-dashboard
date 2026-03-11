@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.20] - 2026-03-11
+
+### Added
+- **Balance-aware Telegram bot** — /budget command now shows actual spending power based on account balance
+- Morning briefing shows daily allowance and warns when budget is balance-constrained
+- Evening budget alert triggers on low balance (not just budget >80%)
+- After saving expense, bot shows remaining budget for that category + daily allowance
+- "Snus" added to category edit list in Telegram bot
+
+### Fixed
+- SQLite STDEV crash — replaced with native (MAX-MIN)/AVG consistency check
+- Fixed strftime format strings in upcoming bills SQL query
+
+---
+
 ## [1.0.19] - 2026-03-11
 
 ### Added
