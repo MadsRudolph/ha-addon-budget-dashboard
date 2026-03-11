@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.18] - 2026-03-11
+
+### Fixed
+- Deals section not loading — addon had outdated deals.py missing 13 functions (smart_search, price history, shopping list, etc.)
+
+---
+
 ## [1.0.17] - 2026-03-11
 
 ### Fixed
