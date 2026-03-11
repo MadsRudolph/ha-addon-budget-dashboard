@@ -1,10 +1,9 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base:latest
 FROM ${BUILD_FROM}
 
-# Install build deps (Debian-based python image)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        gcc g++ jq bash && \
-    rm -rf /var/lib/apt/lists/*
+# Install Python and build deps (Alpine-based HA image with S6)
+RUN apk add --no-cache \
+        python3 py3-pip gcc g++ musl-dev python3-dev jq bash
 
 WORKDIR /app
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.7] - 2026-03-11
+
+### Fixed
+- Reverted to HA base image (Alpine + S6 overlay) — Debian python image lacked S6, preventing container startup
+
+---
+
 ## [1.0.6] - 2026-03-11
 
 ### Fixed
