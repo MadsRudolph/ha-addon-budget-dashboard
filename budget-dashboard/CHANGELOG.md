@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.10] - 2026-03-11
+
+### Fixed
+- Use ITBD (booked) balance instead of ITAV (available) for accurate balance matching
+
+---
+
 ## [1.0.9] - 2026-03-11
 
 ### Fixed

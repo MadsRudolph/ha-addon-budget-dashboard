@@ -204,8 +204,8 @@ def fetch_balance(account_uid: str) -> float:
     )
     resp.raise_for_status()
     for bal in resp.json().get("balances", []):
-        # Prefer ITAV (available balance) over ITBD (booked balance)
-        if bal.get("balance_type") == "ITAV":
+        # Prefer ITBD (booked balance) since we only track booked transactions
+        if bal.get("balance_type") == "ITBD":
             return float(bal["balance_amount"]["amount"])
     # Fallback to first balance
     balances = resp.json().get("balances", [])
