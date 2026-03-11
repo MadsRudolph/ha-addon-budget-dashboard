@@ -230,13 +230,20 @@ def normalize_transactions(raw: list[dict]) -> list[dict]:
         # Auto-categorize
         cat, subcat = _categorize(description)
 
+        # Balance after transaction (if provided by API)
+        bal_info = tx.get("balance_after_transaction", {})
+        try:
+            balance = float(bal_info.get("amount", 0))
+        except (ValueError, TypeError):
+            balance = 0
+
         rows.append({
             "date": tx_date,
             "category": cat,
             "subcategory": subcat,
             "description": description,
             "amount": amount,
-            "balance": 0,
+            "balance": balance,
         })
     return rows
 
