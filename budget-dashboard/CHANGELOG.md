@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.13] - 2026-03-11
+
+### Added
+- Realistic budget plan with saving targets (12,000 DKK/month total, ~19% savings rate)
+- Expanded category rules: tandlæge, Klarna, kortgebyr, Kaffebønnen, S-Huset, SILVAN, GoodNotes, etc.
+- Re-categorized 356 previously uncategorized transactions (rent, MobilePay supermarkets, subscriptions)
+
+---
+
 ## [1.0.12] - 2026-03-11
 
 ### Fixed

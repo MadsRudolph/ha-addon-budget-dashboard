@@ -38,25 +38,42 @@ DB_PATH = APP_DIR / "budget.db"
 # ── Category rules (keep in sync with dashboard.py CATEGORY_RULES) ──
 
 CATEGORY_RULES = [
+    # Housing
     (r"P\.?O\.?\s*Pedersen|Kollegiet", "Bolig", "Husleje"),
     (r"Norlys", "Bolig", "Forsyning"),
+    (r"SILVAN|Bauhaus|Harald Nyborg", "Bolig", "Vedligeholdelse"),
+    # Transport
     (r"Rejsekort|DSB|MOB\.PAY\*DSB", "Transport", "Offentlig transport"),
+    # Groceries (handles MobilePay prefix via desc_stripped matching)
     (r"Coop|REMA|F[Ø@]TEX|Føtex|Netto|Lidl|ALDI|Fakta|Meny|Irma|COOP365|Bilka|Spar\b",
      "Dagligvarer", "Supermarked"),
     (r"McDonalds|Burger King|Max Burgers|Sunset Boulevard", "Dagligvarer", "Fast food"),
+    # Entertainment & dining
     (r"Wolt|Just.?Eat|Hungry", "Fornøjelser og fritid", "Takeaway"),
-    (r"Kaffestuen|Starbucks|Espresso|Cafe|Café", "Fornøjelser og fritid", "Café"),
+    (r"Kaffestuen|Starbucks|Espresso|Cafe|Café|Kaffeb.nnen", "Fornøjelser og fritid", "Café"),
     (r"Durumbar|Kebap|Shawarma|Pizza|Pakhus", "Fornøjelser og fritid", "Restaurant"),
-    (r"WINTER|Bar |Bodega|Pub\b", "Fornøjelser og fritid", "Bar"),
+    (r"WINTER|Bar |Bodega|Pub\b|S-Huset", "Fornøjelser og fritid", "Bar"),
+    # Subscriptions & digital services
     (r"TIDAL|Spotify|Netflix|Disney|HBO|YouTube|Viaplay", "Øvrige udgifter", "Streaming"),
-    (r"Microsoft|OPENAI|CLAUDE|ANTHROPIC|Google\s*\*?Google\s*One|Google\s*Play",
+    (r"Microsoft|OPENAI|CLAUDE|ANTHROPIC|Google\s*\*?Google\s*One|Google\s*Play|"
+     r"PADDLE\.NET|GOODNOTES|LMST.*Drift|BUDGETMATE",
      "Øvrige udgifter", "Abonnement"),
+    # Health & personal care
+    (r"Tandl.ge|Godt Smil", "Tøj, sko og personlig pleje", "Tandlæge"),
     (r"Carlsen|Barbershop|Frisør|frisør", "Tøj, sko og personlig pleje", "Frisør"),
-    (r"Matas|Apotek|Normal\b|N.rrebro Apotek", "Tøj, sko og personlig pleje", "Personlig pleje"),
-    (r"temashop|Brinck Elektronik|ESSENCEVAULT", "Øvrige udgifter", "Shopping"),
+    (r"Matas|Apotek|Normal\b|N.rrebro Apotek|Medictinedic", "Tøj, sko og personlig pleje", "Personlig pleje"),
+    # Shopping
+    (r"temashop|Brinck Elektronik|ESSENCEVAULT|Klarna|PRINT YOUR SPEAKERS",
+     "Øvrige udgifter", "Shopping"),
+    # Insurance & fees
     (r"forsikri|Tryg\b", "Personforsikringer", "Forsikring"),
+    (r"Kortgebyr|Gebyrer", "Øvrige udgifter", "Gebyrer"),
+    (r"^Rente$", "Anden gæld", "Renter"),
+    # Donations
     (r"Kr.ftens Bek.mpelse|Red Barnet|UNICEF", "Øvrige udgifter", "Donation"),
+    # Savings transfers
     (r"Til Opsparing|Fra Opsparing", "Opsparing", "Overførsel"),
+    # Person-to-person MobilePay (catch-all for names — must be LAST)
     (r"^MobilePay\s+[A-ZÆØÅ][a-zæøå]+\s+[A-ZÆØÅ]", "Øvrige udgifter", "MobilePay overførsel"),
 ]
 
