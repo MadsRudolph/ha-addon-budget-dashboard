@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.8] - 2026-03-11
+
+### Changed
+- Transaction history extended from 90 to 365 days
+- Upsert logic: re-syncing now fixes balance=0 for previously imported transactions
+
+---
+
 ## [1.0.7] - 2026-03-11
 
 ### Fixed

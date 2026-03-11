@@ -183,15 +183,21 @@ def insert_transactions(conn, rows):
         h = hashlib.sha256(
             f"{d}|{amt}|{desc}#{seen_counts[base_key]}".encode()
         ).hexdigest()
+        balance = row.get("balance", 0)
         try:
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO transactions "
                 "(date, category, subcategory, description, amount, balance, import_hash) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(import_hash) DO UPDATE SET balance = excluded.balance "
+                "WHERE excluded.balance != 0 AND transactions.balance = 0",
                 (d, row["category"], row["subcategory"], desc, amt,
-                 row.get("balance", 0), h),
+                 balance, h),
             )
-            new_count += 1
+            if cur.rowcount > 0:
+                new_count += 1
+            else:
+                skip_count += 1
         except Exception:
             skip_count += 1
     conn.commit()

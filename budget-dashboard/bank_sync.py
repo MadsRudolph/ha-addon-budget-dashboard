@@ -28,7 +28,7 @@ load_dotenv(ENV_PATH)
 BASE_URL = "https://api.enablebanking.com"
 ASPSP_NAME = "Danske Bank"
 ASPSP_COUNTRY = "DK"
-DAYS_BACK = 90
+DAYS_BACK = 365
 TIMEOUT = 30
 CALLBACK_PORT = 8321
 REDIRECT_URI = f"https://localhost:{CALLBACK_PORT}/callback"
