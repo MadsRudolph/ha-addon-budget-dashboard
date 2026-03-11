@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.12] - 2026-03-11
+
+### Fixed
+- Income/spending KPIs now show last complete month instead of current incomplete month (salary arrives end of month)
+- Added current month progress caption below KPIs
+
+---
+
 ## [1.0.11] - 2026-03-11
 
 ### Added

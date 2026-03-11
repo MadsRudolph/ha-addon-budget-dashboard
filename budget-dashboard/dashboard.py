@@ -1862,19 +1862,38 @@ def render_overview(df, budgets_df, budget_map, conn):
     monthly_stats.columns = monthly_stats.columns.droplevel(0)
     monthly_stats["net"] = monthly_stats["income"] + monthly_stats["expense"]
     
-    # Get values for Current and Previous month
+    # Use LAST COMPLETE month for KPIs (current month is incomplete — salary
+    # typically arrives at end of month, skewing mid-month figures).
+    complete_months = sorted([m for m in monthly_stats.index if m < current_month_str])
+    if len(complete_months) >= 2:
+        last_complete = complete_months[-1]
+        prev_complete = complete_months[-2]
+    elif len(complete_months) == 1:
+        last_complete = complete_months[-1]
+        prev_complete = None
+    else:
+        last_complete = current_month_str  # fallback if no complete months
+        prev_complete = None
+
     try:
-        cur_inc = monthly_stats.loc[current_month_str, "income"] if current_month_str in monthly_stats.index else 0
-        cur_exp = monthly_stats.loc[current_month_str, "expense"] if current_month_str in monthly_stats.index else 0
+        cur_inc = monthly_stats.loc[last_complete, "income"] if last_complete in monthly_stats.index else 0
+        cur_exp = monthly_stats.loc[last_complete, "expense"] if last_complete in monthly_stats.index else 0
     except KeyError:
         cur_inc, cur_exp = 0, 0
-        
+
     try:
-        prev_inc = monthly_stats.loc[prev_month_str, "income"] if prev_month_str in monthly_stats.index else 0
-        prev_exp = monthly_stats.loc[prev_month_str, "expense"] if prev_month_str in monthly_stats.index else 0
+        prev_inc = monthly_stats.loc[prev_complete, "income"] if prev_complete and prev_complete in monthly_stats.index else 0
+        prev_exp = monthly_stats.loc[prev_complete, "expense"] if prev_complete and prev_complete in monthly_stats.index else 0
     except KeyError:
         prev_inc, prev_exp = 0, 0
-    
+
+    # Current (incomplete) month values for caption
+    try:
+        partial_inc = monthly_stats.loc[current_month_str, "income"] if current_month_str in monthly_stats.index else 0
+        partial_exp = monthly_stats.loc[current_month_str, "expense"] if current_month_str in monthly_stats.index else 0
+    except KeyError:
+        partial_inc, partial_exp = 0, 0
+
     cur_net = cur_inc + cur_exp # expense is negative
     current_balance = df.iloc[-1]["balance"]
     
@@ -1945,6 +1964,7 @@ def render_overview(df, budgets_df, budget_map, conn):
         st.markdown("---")
 
     # ── 3. KPI Grid (with Deltas) ──
+    last_complete_label = pd.to_datetime(last_complete).strftime("%b") if last_complete != current_month_str else "Mo"
     k1, k2, k3, k4 = st.columns(4)
 
     k1.metric(
@@ -1954,23 +1974,29 @@ def render_overview(df, budgets_df, budget_map, conn):
         help="Current account balance"
     )
     k2.metric(
-        "Net Income (Mo)", 
-        f"{cur_inc:,.0f} DKK", 
-        f"{cur_inc - prev_inc:,.0f} vs last mo",
-        delta_color="normal"
+        f"Income ({last_complete_label})",
+        f"{cur_inc:,.0f} DKK",
+        f"{cur_inc - prev_inc:,.0f} vs prev",
+        delta_color="normal",
+        help="Last complete month (salary arrives end of month)"
     )
     k3.metric(
-        "Spending (Mo)", 
-        f"{abs(cur_exp):,.0f} DKK", 
-        f"{abs(cur_exp) - abs(prev_exp):,.0f} vs last mo",
-        delta_color="inverse" # Negative delta (less spending) is green
+        f"Spending ({last_complete_label})",
+        f"{abs(cur_exp):,.0f} DKK",
+        f"{abs(cur_exp) - abs(prev_exp):,.0f} vs prev",
+        delta_color="inverse", # Negative delta (less spending) is green
+        help="Last complete month"
     )
     k4.metric(
-        "Savings Rate", 
+        "Savings Rate",
         f"{savings_rate:.1f}%", 
         f"{savings_rate - prev_savings_rate:.1f}%",
         delta_color="normal"
     )
+
+    # Current month progress
+    current_month_label = datetime.now().strftime("%B")
+    st.caption(f"📊 {current_month_label} so far: {partial_inc:,.0f} DKK income · {abs(partial_exp):,.0f} DKK spent")
 
     # ── Shift Callout (Calendar) ──
     shifts_df = fetch_shifts(conn)
