@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.6] - 2026-03-11
+
+### Fixed
+- Net worth display showing 0 — now uses real balance from Enable Banking API
+
+---
+
 ## [1.0.5] - 2026-03-10
 
 ### Added
