@@ -166,22 +166,28 @@ def auto_categorize(conn, dry_run=False):
         conn.commit()
         load_transactions.clear()
 
-    # Also detect snus: gas station purchases >= 65 and < 130 DKK
-    snus_rows = conn.execute(
+    # Gas station detection (no car — never fuel)
+    gas_rows = conn.execute(
         "SELECT id, description, amount FROM transactions "
-        "WHERE category != 'Snus' AND amount < 0"
+        "WHERE amount < 0"
     ).fetchall()
-    snus_count = 0
-    for row_id, desc, amt in snus_rows:
-        if (65 <= abs(amt) < 130
-                and re.search(r"Q8|Circle K|Shell|7-Eleven|Narvesen|kiosk",
-                              desc, re.IGNORECASE)):
-            conn.execute(
-                "UPDATE transactions SET category = 'Snus', subcategory = 'Snus + kiosk' WHERE id = ?",
-                (row_id,),
-            )
-            snus_count += 1
-    if snus_count:
+    gas_count = 0
+    for row_id, desc, amt in gas_rows:
+        if re.search(r"Q8|Circle K|Shell|7-Eleven|Narvesen|kiosk|OK Plus",
+                      desc, re.IGNORECASE):
+            if abs(amt) >= 65:
+                conn.execute(
+                    "UPDATE transactions SET category = 'Snus', subcategory = 'Snus + kiosk' WHERE id = ?",
+                    (row_id,),
+                )
+                gas_count += 1
+            else:
+                conn.execute(
+                    "UPDATE transactions SET category = 'Dagligvarer', subcategory = 'Kiosk' WHERE id = ?",
+                    (row_id,),
+                )
+                gas_count += 1
+    if gas_count:
         conn.commit()
         load_transactions.clear()
 

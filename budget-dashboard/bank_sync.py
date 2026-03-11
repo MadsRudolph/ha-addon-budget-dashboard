@@ -295,12 +295,14 @@ def normalize_transactions(raw: list[dict]) -> list[dict]:
         # Auto-categorize
         cat, subcat = _categorize(description)
 
-        # Snus detection: gas station purchase >= 65 and < 130 DKK
+        # Gas station detection (no car — never fuel)
         if (amount < 0
-                and 65 <= abs(amount) < 130
-                and re.search(r"Q8|Circle K|Shell|7-Eleven|Narvesen|kiosk",
+                and re.search(r"Q8|Circle K|Shell|7-Eleven|Narvesen|kiosk|OK Plus",
                               description, re.IGNORECASE)):
-            cat, subcat = "Snus", "Snus + kiosk"
+            if abs(amount) >= 65:
+                cat, subcat = "Snus", "Snus + kiosk"
+            else:
+                cat, subcat = "Dagligvarer", "Kiosk"
 
         rows.append({
             "date": tx_date,

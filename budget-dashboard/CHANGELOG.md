@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.15] - 2026-03-11
+
+### Fixed
+- All gas station transactions (Q8, Circle K, 7-Eleven, OK Plus) removed from Transport — no car, never fuel
+- Gas station >= 65 DKK → Snus, < 65 DKK → Dagligvarer/Kiosk (drinks/snacks)
+- Removed 130 DKK upper bound from snus detection (no fuel to confuse with)
+
+---
+
 ## [1.0.14] - 2026-03-11
 
 ### Added
