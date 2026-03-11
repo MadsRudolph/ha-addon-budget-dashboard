@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.11] - 2026-03-11
+
+### Added
+- CSV upload button in Danske Bank Sync sidebar — imports bank CSV with real balances, then API sync handles new transactions going forward
+
+---
+
 ## [1.0.10] - 2026-03-11
 
 ### Fixed

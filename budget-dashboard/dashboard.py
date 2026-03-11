@@ -540,6 +540,32 @@ def main():
                 except ValueError:
                     pass
 
+            st.markdown("---")
+            st.caption("Import bank CSV (replaces all data with bank's real balances)")
+            csv_file = st.file_uploader("Upload Danske Bank CSV", type=["csv"], key="bank_csv_upload")
+            if csv_file is not None:
+                if st.button("Import CSV", type="primary", use_container_width=True):
+                    try:
+                        file_bytes = csv_file.getvalue()
+                        # Clear existing transactions before importing
+                        conn.execute("DELETE FROM transactions")
+                        conn.commit()
+                        new_count, skip_count = import_csv_data(file_bytes, conn)
+                        if new_count > 0:
+                            recat = auto_categorize(conn)
+                            msg = f"Imported {new_count} transactions from CSV"
+                            if skip_count > 0:
+                                msg += f" ({skip_count} skipped)"
+                            if recat > 0:
+                                msg += f", auto-categorized {recat}"
+                            st.success(msg)
+                            load_transactions.clear()
+                            st.rerun()
+                        else:
+                            st.warning("No transactions found in CSV.")
+                    except Exception as e:
+                        st.error(f"CSV import failed: {e}")
+
         # Quick-add manual transaction
         with st.expander("➕ Quick Add"):
             with st.form("quick_add_tx", clear_on_submit=True):
