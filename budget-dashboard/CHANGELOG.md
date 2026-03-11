@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.14] - 2026-03-11
+
+### Added
+- Snus as its own budget category (800 DKK/month target, currently spending ~1,025)
+- Auto-detection: gas station purchases >= 65 DKK and < 130 DKK classified as Snus
+- Snus detection in both API sync and auto-categorize pipelines
+
+### Changed
+- Transport budget reduced from 1,300 to 800 (snus was inflating it)
+- Dagligvarer budget reduced from 3,500 to 3,200 (snus was inflating it)
+
+---
+
 ## [1.0.13] - 2026-03-11
 
 ### Added
