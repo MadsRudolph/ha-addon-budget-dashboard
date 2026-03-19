@@ -1061,12 +1061,18 @@ async def _send_budget(bot, chat_id: int) -> None:
     try:
         conn = _get_conn()
         statuses = _budget_status(conn)
-        ba = _balance_aware_status(conn)
-        conn.close()
     except Exception as exc:
         logger.error("Error fetching budget status: %s", exc)
         await bot.send_message(chat_id=chat_id, text="Error reading database.")
         return
+    # Balance-aware status is optional — don't let it break the budget view
+    try:
+        ba = _balance_aware_status(conn)
+    except Exception as exc:
+        logger.warning("Budget: balance-aware status failed: %s", exc)
+        ba = None
+    finally:
+        conn.close()
 
     if not statuses:
         await bot.send_message(
@@ -1079,7 +1085,7 @@ async def _send_budget(bot, chat_id: int) -> None:
     lines = [f"\U0001F4B0 *Budget Status - {month_label}*", ""]
 
     # Balance-aware header
-    if ba["is_constrained"]:
+    if ba and ba["is_constrained"]:
         lines.append(
             f"\u26A0\uFE0F *Balance: {_fmt(ba['balance'])}*\n"
             f"Upcoming bills: {_fmt(ba['upcoming_bills'])}\n"
@@ -1088,7 +1094,7 @@ async def _send_budget(bot, chat_id: int) -> None:
             f"({ba['days_left']} days left)"
         )
         lines.append("")
-    else:
+    elif ba:
         lines.append(
             f"Can spend: *{_fmt(ba['effective_remaining'])}* "
             f"| {_fmt(ba['daily_allowance'])}/day "
@@ -1098,8 +1104,11 @@ async def _send_budget(bot, chat_id: int) -> None:
 
     keyboard_buttons = []
     for b in statuses:
-        adj = ba["adjusted"].get(b["category"], b["remaining"])
-        remaining_str = _fmt(adj) if ba["is_constrained"] else _fmt(b["remaining"])
+        if ba:
+            adj = ba["adjusted"].get(b["category"], b["remaining"])
+            remaining_str = _fmt(adj) if ba["is_constrained"] else _fmt(b["remaining"])
+        else:
+            remaining_str = _fmt(b["remaining"])
         lines.append(
             f"{b['emoji']} *{b['category']}*\n"
             f"    {_fmt(b['spent'])} / {_fmt(b['limit'])} ({b['pct']:.0f}%)\n"
@@ -2418,16 +2427,22 @@ async def _morning_briefing(context: ContextTypes.DEFAULT_TYPE) -> None:
         bal = _latest_balance(conn)
         yesterday = _yesterday_summary(conn)
         budgets = _budget_status(conn)
-        ba = _balance_aware_status(conn)
         snus_info = _snus_streak(conn)
         df = _load_transactions_df(conn)
         budgets_df = _load_budgets_df(conn)
         shifts_df = fetch_shifts_standalone(conn)
         subs = _upcoming_subscriptions(conn)
-        conn.close()
     except Exception as exc:
         logger.error("Morning briefing DB error: %s", exc)
         return
+    # Balance-aware status is optional — don't let it break the briefing
+    try:
+        ba = _balance_aware_status(conn)
+    except Exception as exc:
+        logger.warning("Morning briefing: balance-aware status failed: %s", exc)
+        ba = None
+    finally:
+        conn.close()
 
     lines = ["\U0001F305 *Good morning! Here's your day:*", ""]
 
@@ -2435,15 +2450,16 @@ async def _morning_briefing(context: ContextTypes.DEFAULT_TYPE) -> None:
     if bal is not None:
         bal_emoji = "\U0001F7E2" if bal >= 0 else "\U0001F534"
         lines.append(f"{bal_emoji} Balance: *{_fmt(bal)}*")
-        lines.append(
-            f"\U0001F4B5 You can spend *{_fmt(ba['daily_allowance'])}* today "
-            f"({_fmt(ba['effective_remaining'])} over {ba['days_left']} days)"
-        )
-        if ba["is_constrained"]:
+        if ba:
             lines.append(
-                f"\u26A0\uFE0F Budget adjusted to balance "
-                f"(bills coming: {_fmt(ba['upcoming_bills'])})"
+                f"\U0001F4B5 You can spend *{_fmt(ba['daily_allowance'])}* today "
+                f"({_fmt(ba['effective_remaining'])} over {ba['days_left']} days)"
             )
+            if ba["is_constrained"]:
+                lines.append(
+                    f"\u26A0\uFE0F Budget adjusted to balance "
+                    f"(bills coming: {_fmt(ba['upcoming_bills'])})"
+                )
 
     # Yesterday
     if yesterday["count"] > 0:
@@ -2458,7 +2474,10 @@ async def _morning_briefing(context: ContextTypes.DEFAULT_TYPE) -> None:
         lines.append("")
         lines.append("\u26A0\uFE0F *Budget alerts:*")
         for b in warnings:
-            adj = ba["adjusted"].get(b["category"], b["remaining"])
+            if ba:
+                adj = ba["adjusted"].get(b["category"], b["remaining"])
+            else:
+                adj = b["remaining"]
             lines.append(
                 f"  {b['category']}: {b['pct']:.0f}% used "
                 f"({_fmt(b['spent'])}/{_fmt(b['limit'])}) — "
@@ -2661,14 +2680,20 @@ async def _daily_budget_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         conn = _get_conn()
         statuses = _budget_status(conn)
-        ba = _balance_aware_status(conn)
-        conn.close()
     except Exception as exc:
         logger.error("Daily alert DB error: %s", exc)
         return
+    # Balance-aware status is optional — don't let it break the alert
+    try:
+        ba = _balance_aware_status(conn)
+    except Exception as exc:
+        logger.warning("Daily alert: balance-aware status failed: %s", exc)
+        ba = None
+    finally:
+        conn.close()
 
     budget_warnings = [b for b in statuses if b["pct"] >= 80]
-    low_balance = ba["is_constrained"]
+    low_balance = ba["is_constrained"] if ba else False
 
     if not budget_warnings and not low_balance:
         logger.info("Daily check: all budgets under 80%%, balance OK. No alert sent.")
@@ -2678,7 +2703,7 @@ async def _daily_budget_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
     lines = [f"\U0001F514 *Budget Alert - {month_label}*", ""]
 
     # Low balance warning first
-    if low_balance:
+    if low_balance and ba:
         if ba["available"] <= 0:
             lines.append(
                 f"\U0001F534 *Balance critical: {_fmt(ba['balance'])}*\n"
@@ -2695,7 +2720,10 @@ async def _daily_budget_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
         lines.append("")
 
     for b in budget_warnings:
-        adj = ba["adjusted"].get(b["category"], b["remaining"])
+        if ba:
+            adj = ba["adjusted"].get(b["category"], b["remaining"])
+        else:
+            adj = b["remaining"]
         lines.append(
             f"{b['emoji']} *{b['category']}*: "
             f"{_fmt(b['spent'])} / {_fmt(b['limit'])} ({b['pct']:.0f}%) "

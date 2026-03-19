@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.21] - 2026-03-19
+
+### Fixed
+- **Telegram bot daily updates broken** — balance-aware status was inside critical try blocks, causing morning briefing and daily alerts to silently fail if _balance_aware_status threw any exception
+- Balance-aware features now degrade gracefully — if they fail, bot sends messages without balance info instead of sending nothing
+- Fixed connection leak when balance-aware status threw inside data-fetch try block
+- Pinned python-telegram-bot to <22 and apscheduler to <4 to prevent breaking dependency upgrades
+- Added [job-queue] extra to python-telegram-bot for proper APScheduler version pinning
+
+---
+
 ## [1.0.20] - 2026-03-11
 
 ### Added
