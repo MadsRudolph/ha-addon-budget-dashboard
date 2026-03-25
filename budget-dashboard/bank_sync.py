@@ -103,14 +103,22 @@ def _get_app_id() -> str:
 def _load_private_key() -> str:
     """Load the RSA private key from the .pem file."""
     pem_name = os.environ.get("ENABLEBANKING_PEM_FILE", "enablebanking.pem")
-    pem_path = APP_DIR / pem_name
-    if not pem_path.exists():
-        raise RuntimeError(
-            f"Private key not found at {pem_path}. "
-            "Download it from Enable Banking Control Panel and place it "
-            "in the app directory."
-        )
-    return pem_path.read_text()
+    # Check multiple locations: app dir, /share (HA add-on), /data (HA add-on)
+    candidates = [
+        APP_DIR / pem_name,
+        Path("/share") / pem_name,
+        Path("/data") / pem_name,
+        Path("/share/enablebanking.pem"),
+        Path("/data/enablebanking.pem"),
+    ]
+    for pem_path in candidates:
+        if pem_path.exists():
+            return pem_path.read_text()
+    raise RuntimeError(
+        f"Private key not found. Searched: {[str(p) for p in candidates]}. "
+        "Download it from Enable Banking Control Panel and place it "
+        "in /share/enablebanking.pem on your HA instance."
+    )
 
 
 def _make_jwt() -> str:
