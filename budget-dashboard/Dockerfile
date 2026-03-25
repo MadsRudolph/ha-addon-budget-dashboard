@@ -1,8 +1,12 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base:latest
 FROM ${BUILD_FROM}
 
-# Install Python and build deps (Alpine-based HA image with S6)
-RUN apk add --no-cache \
+# Fix CA certificates before installing packages
+RUN cat /etc/alpine-release && \
+    sed -i 's|https://|http://|g' /etc/apk/repositories && \
+    apk add --no-cache ca-certificates && \
+    sed -i 's|http://|https://|g' /etc/apk/repositories && \
+    apk add --no-cache \
         python3 py3-pip gcc g++ musl-dev python3-dev jq bash
 
 WORKDIR /app
