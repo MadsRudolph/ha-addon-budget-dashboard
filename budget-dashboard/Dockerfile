@@ -1,4 +1,4 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base:latest
+ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base:3.21
 FROM ${BUILD_FROM}
 
 # Use http for apk repos (workaround for stale CA certs in base image)
