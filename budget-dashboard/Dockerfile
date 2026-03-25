@@ -1,13 +1,11 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base:latest
 FROM ${BUILD_FROM}
 
-# Fix CA certificates before installing packages
-RUN cat /etc/alpine-release && \
-    sed -i 's|https://|http://|g' /etc/apk/repositories && \
-    apk add --no-cache ca-certificates && \
-    sed -i 's|http://|https://|g' /etc/apk/repositories && \
+# Use http for apk repos (workaround for stale CA certs in base image)
+RUN sed -i 's|https://|http://|g' /etc/apk/repositories && \
     apk add --no-cache \
-        python3 py3-pip gcc g++ musl-dev python3-dev jq bash
+        ca-certificates python3 py3-pip gcc g++ musl-dev python3-dev jq bash && \
+    sed -i 's|http://|https://|g' /etc/apk/repositories
 
 WORKDIR /app
 
