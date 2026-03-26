@@ -10,8 +10,10 @@ RUN sed -i 's|https://|http://|g' /etc/apk/repositories && \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --break-system-packages numpy && \
-    pip install --no-cache-dir --break-system-packages --prefer-binary -r requirements.txt
+RUN apk del py3-numpy py3-pandas 2>/dev/null; \
+    rm -rf /usr/lib/python3.12/site-packages/numpy* /usr/lib/python3.12/site-packages/pandas* && \
+    pip install --no-cache-dir --break-system-packages numpy pandas && \
+    pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy application code
 COPY dashboard.py telegram_bot.py ai_insights.py db.py deals.py bank_sync.py report_generator.py style.css ./
