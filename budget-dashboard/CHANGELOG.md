@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0] - 2026-03-26
+
+### Fixed
+- **amd64 compatibility** — use Debian-based base image for amd64 to avoid NumPy X86_V2 instruction set crashes on older Intel CPUs (e.g. 2018 MacBook Air running Proxmox)
+- **Telegram bot crash loop** — added token format validation, DB table initialization on startup, and exponential backoff in service script to prevent rapid restart loops
+- **Config handling** — properly trim whitespace from config values (bot token, API keys) to prevent silent failures from trailing spaces
+- **cont-init.sh** — fixed shell variable interpolation in inline Python script for calendar settings; now uses env vars properly
+
+### Changed
+- Dockerfile now auto-detects Alpine vs Debian base and installs packages accordingly
+- build.yaml uses `amd64-base-debian:bookworm` for amd64 architecture
+- Telegram bot service script uses restart backoff instead of immediate restart on crash
+
 ## [1.0.21] - 2026-03-19
 
 ### Fixed

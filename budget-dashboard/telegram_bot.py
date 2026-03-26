@@ -907,12 +907,12 @@ def _resolve_token() -> str:
         conn = _get_conn()
         token = _get_setting(conn, "telegram_bot_token")
         conn.close()
-        if token:
-            return token
+        if token and token.strip():
+            return token.strip()
     except Exception:
         pass
 
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
         raise RuntimeError(
             "No Telegram bot token found. Set it in the settings table "
@@ -933,12 +933,12 @@ def _resolve_chat_id() -> int | None:
 
 def _resolve_api_key() -> str | None:
     """Resolve Anthropic API key from env or settings."""
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if key:
         return key
     try:
         conn = _get_conn()
-        key = _get_setting(conn, "anthropic_api_key", "")
+        key = _get_setting(conn, "anthropic_api_key", "").strip()
         conn.close()
         return key if key else None
     except Exception:
@@ -2826,9 +2826,72 @@ async def _weekly_digest(context: ContextTypes.DEFAULT_TYPE) -> None:
 # Application bootstrap
 # ---------------------------------------------------------------------------
 
+def _ensure_db_tables() -> None:
+    """Create all required tables if they don't exist yet."""
+    try:
+        conn = _get_conn()
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                category TEXT NOT NULL,
+                subcategory TEXT NOT NULL,
+                description TEXT NOT NULL,
+                amount REAL NOT NULL,
+                balance REAL NOT NULL,
+                import_hash TEXT UNIQUE NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS budgets (
+                category TEXT PRIMARY KEY,
+                monthly_limit REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS savings_goals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                target REAL NOT NULL,
+                saved REAL DEFAULT 0,
+                deadline TEXT,
+                created TEXT DEFAULT (date('now'))
+            );
+            CREATE TABLE IF NOT EXISTS achievements (
+                name TEXT PRIMARY KEY,
+                unlocked_date TEXT,
+                description TEXT
+            );
+        """)
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logger.warning("Could not ensure DB tables: %s", exc)
+
+
+def _validate_token(token: str) -> bool:
+    """Check that a Telegram bot token looks valid (basic format check)."""
+    # Telegram tokens are in the format: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+    if not token or len(token) < 20:
+        return False
+    if ":" not in token:
+        return False
+    return True
+
+
 def main() -> None:
     """Start the Telegram bot."""
     token = _resolve_token()
+
+    if not _validate_token(token):
+        logger.error(
+            "Telegram bot token appears invalid (expected format: "
+            "123456:ABC-DEF...). Check the add-on configuration."
+        )
+        raise RuntimeError("Invalid Telegram bot token format.")
+
+    # Ensure all DB tables exist before doing anything
+    _ensure_db_tables()
 
     # Initialize snus table on startup
     try:

@@ -54,12 +54,13 @@ if [ -f "$OPTIONS" ]; then
 
     # Write calendar settings to DB if provided
     if [ -n "$GCAL_URL" ] || [ -n "$GCAL_KW" ]; then
+        export GCAL_URL GCAL_KW
         python3 -c "
 import sqlite3, os
 conn = sqlite3.connect('/data/budget.db')
 conn.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
-gcal_url = os.environ.get('GCAL_URL', '$GCAL_URL')
-gcal_kw = os.environ.get('GCAL_KW', '$GCAL_KW')
+gcal_url = os.environ.get('GCAL_URL', '')
+gcal_kw = os.environ.get('GCAL_KW', '')
 if gcal_url:
     conn.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ('gcal_ics_url', gcal_url))
 if gcal_kw:
