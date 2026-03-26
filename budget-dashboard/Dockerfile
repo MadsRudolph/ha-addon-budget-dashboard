@@ -31,8 +31,10 @@ RUN if command -v apk >/dev/null 2>&1; then \
         rm -rf /usr/lib/python3.*/site-packages/numpy* \
                /usr/lib/python3.*/site-packages/pandas*; \
     fi && \
+    rm -rf /usr/local/lib/python3.*/dist-packages/numpy* \
+           /usr/local/lib/python3.*/dist-packages/pandas* && \
     pip install --no-cache-dir --break-system-packages \
-        numpy pandas && \
+        "numpy<2" "pandas<2.1" && \
     pip install --no-cache-dir --break-system-packages \
         -r requirements.txt
 
