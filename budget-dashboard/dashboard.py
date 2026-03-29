@@ -535,7 +535,7 @@ def main():
     with st.sidebar:
         st.markdown("## Navigation")
         page = st.radio("Go to",
-            ["Overview", "Analytics", "Income & Loan", "Snus Tracker", "Deals", "AI Advisor", "Achievements", "Skat 2024", "Settings"],
+            ["Overview", "Analytics", "Income & Loan", "Snus Tracker", "Deals", "AI Advisor", "Achievements", "Årsopgørelse", "Settings"],
             label_visibility="collapsed"
         )
         
@@ -667,8 +667,8 @@ def main():
         render_ai_insights(df_filtered, budgets_df, conn)
     elif page == "Achievements":
         render_achievements(df_filtered, achievements_df, budgets_df, budget_map, conn)
-    elif page == "Skat 2024":
-        render_skat_2024(conn)
+    elif page == "Årsopgørelse":
+        render_aarsopgoerelse(conn)
     elif page == "Settings":
         render_settings(df, budgets_df, conn)
 
@@ -3779,7 +3779,7 @@ def render_settings(df, budgets_df, conn):
     st.caption("More settings (like tax rates and loan details) can be found on their respective pages.")
 
 
-# ──────────────────────────── Skat 2024 (Årsopgørelse) ────────────────────────────
+# ──────────────────────────── Årsopgørelse (Skat) ────────────────────────────
 
 SKAT_CATEGORIES = [
     "Renteudgifter",
@@ -3824,27 +3824,40 @@ def _fmt_dkk(amount: float) -> str:
     return f"{sign}{int_str},{decimal_part:02d} kr."
 
 
-def render_skat_2024(conn):
-    st.header("🧾 Skat 2024 — Årsopgørelse")
-    st.caption("Hent dine Danske Bank-transaktioner for 2024 og beregn dine fradrag til årsopgørelsen.")
+def render_aarsopgoerelse(conn):
+    st.header("🧾 Årsopgørelse")
+
+    # ── Year selector ──
+    current_year = datetime.now().year
+    year_options = list(range(current_year, current_year - 5, -1))
+    selected_year = st.selectbox("Vælg skatteår", year_options, index=0, key="skat_year")
+    yr = str(selected_year)
+
+    st.caption(f"Hent dine Danske Bank-transaktioner for {yr} og beregn dine fradrag til årsopgørelsen.")
+
+    # Dynamic session_state keys based on year
+    raw_key = f"skat_{yr}_raw_txns"
+    editor_key = f"skat_{yr}_editor_data"
+    editor_widget_key = f"skat_{yr}_data_editor"
 
     # ── Section 1: Fetch transactions ──
     st.subheader("1. Hent transaktioner")
 
     col_fetch, col_refresh = st.columns([3, 1])
     with col_fetch:
-        fetch_clicked = st.button("Hent 2024-transaktioner fra Danske Bank", type="primary",
+        fetch_clicked = st.button(f"Hent {yr}-transaktioner fra Danske Bank", type="primary",
                                   use_container_width=True, key="skat_fetch_btn")
     with col_refresh:
         refresh_clicked = st.button("🔄 Genindlæs", use_container_width=True, key="skat_refresh_btn")
 
     if fetch_clicked or refresh_clicked:
-        st.session_state.pop("skat_2024_raw_txns", None)
+        st.session_state.pop(raw_key, None)
+        st.session_state.pop(editor_key, None)
 
-    if "skat_2024_raw_txns" not in st.session_state:
+    if raw_key not in st.session_state:
         if fetch_clicked or refresh_clicked:
             try:
-                with st.spinner("Henter transaktioner fra Danske Bank for 2024..."):
+                with st.spinner(f"Henter transaktioner fra Danske Bank for {yr}..."):
                     import os as _os
                     from bank_sync import _auth_headers, get_session, fetch_transactions, normalize_transactions
 
@@ -3863,18 +3876,17 @@ def render_skat_2024(conn):
                     for uid in account_uids:
                         acct_uid = uid if isinstance(uid, str) else uid.get("uid", "")
                         if acct_uid:
-                            all_raw.extend(fetch_transactions(acct_uid, date_from="2024-01-01"))
+                            all_raw.extend(fetch_transactions(acct_uid, date_from=f"{yr}-01-01"))
 
                     rows = normalize_transactions(all_raw)
-                    # Filter to 2024 only
-                    rows_2024 = [r for r in rows if r["date"].startswith("2024")]
+                    rows_year = [r for r in rows if r["date"].startswith(yr)]
 
-                    if not rows_2024:
-                        st.warning("Ingen transaktioner fundet for 2024. Tjek at din banksession stadig er aktiv.")
+                    if not rows_year:
+                        st.warning(f"Ingen transaktioner fundet for {yr}. Tjek at din banksession stadig er aktiv.")
                         return
 
-                    st.session_state["skat_2024_raw_txns"] = rows_2024
-                    st.success(f"Hentet {len(rows_2024)} transaktioner for 2024.")
+                    st.session_state[raw_key] = rows_year
+                    st.success(f"Hentet {len(rows_year)} transaktioner for {yr}.")
 
             except RuntimeError as e:
                 st.error(f"Banksession udløbet eller ugyldig: {e}\n\nKør 'python bank_sync.py --link' for at genautentificere.")
@@ -3883,10 +3895,10 @@ def render_skat_2024(conn):
                 st.error(f"Fejl ved hentning af transaktioner: {e}")
                 return
         else:
-            st.info("Klik på knappen ovenfor for at hente dine 2024-transaktioner fra Danske Bank.")
+            st.info(f"Klik på knappen ovenfor for at hente dine {yr}-transaktioner fra Danske Bank.")
             return
 
-    raw_txns = st.session_state["skat_2024_raw_txns"]
+    raw_txns = st.session_state[raw_key]
 
     # ── KPI overview ──
     total_income = sum(tx["amount"] for tx in raw_txns if tx["amount"] > 0)
@@ -3909,7 +3921,7 @@ def render_skat_2024(conn):
     st.subheader("2. Kategorisering af transaktioner")
 
     # Build initial categorized data if not already in session_state
-    if "skat_2024_editor_data" not in st.session_state:
+    if editor_key not in st.session_state:
         editor_rows = []
         for tx in raw_txns:
             skat_cat = _skat_categorize(tx["description"])
@@ -3929,9 +3941,9 @@ def render_skat_2024(conn):
             else:
                 return (1, cat, r["Dato"])
         editor_rows.sort(key=_sort_key)
-        st.session_state["skat_2024_editor_data"] = editor_rows
+        st.session_state[editor_key] = editor_rows
 
-    editor_rows = st.session_state["skat_2024_editor_data"]
+    editor_rows = st.session_state[editor_key]
 
     # Count categories
     relevant_count = sum(1 for r in editor_rows if r["Kategori"] not in ("Ikke relevant", "Ukendt"))
@@ -3967,18 +3979,18 @@ def render_skat_2024(conn):
             },
             num_rows="dynamic",
             use_container_width=True,
-            key="skat_2024_data_editor",
+            key=editor_widget_key,
         )
 
         # Save edits back to session_state
         if edited_df is not None:
             # Merge edits: update shown rows, keep hidden "Ikke relevant" rows
             if show_all:
-                st.session_state["skat_2024_editor_data"] = edited_df.to_dict("records")
+                st.session_state[editor_key] = edited_df.to_dict("records")
             else:
                 hidden = [r for r in editor_rows if r["Kategori"] == "Ikke relevant"]
-                st.session_state["skat_2024_editor_data"] = edited_df.to_dict("records") + hidden
-            editor_rows = st.session_state["skat_2024_editor_data"]
+                st.session_state[editor_key] = edited_df.to_dict("records") + hidden
+            editor_rows = st.session_state[editor_key]
 
     # ── Section 3: Fradragsberegner ──
     st.markdown("---")
@@ -4001,7 +4013,7 @@ def render_skat_2024(conn):
     with col_km:
         km_en_vej = st.number_input("Km én vej til arbejde", min_value=0, value=0, step=1, key="skat_km")
     with col_days:
-        arbejdsdage = st.number_input("Antal arbejdsdage i 2024", min_value=0, value=220, step=1, key="skat_dage")
+        arbejdsdage = st.number_input(f"Antal arbejdsdage i {yr}", min_value=0, value=220, step=1, key="skat_dage")
 
     if km_en_vej > 0 and arbejdsdage > 0:
         daglig_retur = km_en_vej * 2
@@ -4110,8 +4122,8 @@ def render_skat_2024(conn):
 - Beløb der skal indtastes: **{_fmt_dkk(beloeb)}**
 """)
 
-        # Build plain-text version
-        lines = ["Fradrag til årsopgørelsen 2024", "=" * 35, ""]
+        # Plain-text summary with built-in copy button
+        lines = [f"Fradrag til årsopgørelsen {yr}", "=" * 35, ""]
         for name, rubrik, beloeb in fradrag_results:
             lines.append(f"{name}")
             lines.append(f"  Rubrik: {rubrik}")
@@ -4121,31 +4133,8 @@ def render_skat_2024(conn):
         lines.append(f"Estimeret skattebesparelse (~33%): {_fmt_dkk(estimated_saving)}")
         plain_text = "\n".join(lines)
 
-        # Clipboard copy via JS
-        import json as _json
-        import base64 as _b64
-        b64_text = _b64.b64encode(plain_text.encode("utf-8")).decode("ascii")
-        copy_html = f"""
-        <script>
-        function copyFradrag() {{
-            var text = atob("{b64_text}");
-            navigator.clipboard.writeText(text).then(
-                function() {{ document.getElementById("copyBtn").innerText = "✅ Kopieret!"; }},
-                function() {{ document.getElementById("copyBtn").innerText = "❌ Kunne ikke kopiere"; }}
-            );
-        }}
-        </script>
-        <button id="copyBtn" onclick="copyFradrag()" style="
-            padding: 0.5rem 1rem;
-            background: #ff4b4b;
-            color: white;
-            border: none;
-            border-radius: 0.5rem;
-            cursor: pointer;
-            font-size: 1rem;
-        ">📋 Kopiér som tekst</button>
-        """
-        st.components.v1.html(copy_html, height=50)
+        st.caption("Kopiér teksten nedenfor (brug kopier-knappen i højre hjørne):")
+        st.code(plain_text, language=None)
     else:
         st.info("Ingen fradrag fundet endnu. Hent transaktioner og kategorisér dem ovenfor.")
 
