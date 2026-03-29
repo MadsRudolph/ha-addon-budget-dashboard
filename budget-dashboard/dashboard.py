@@ -3856,44 +3856,67 @@ def render_aarsopgoerelse(conn):
 
     if raw_key not in st.session_state:
         if fetch_clicked or refresh_clicked:
-            try:
-                with st.spinner(f"Henter transaktioner fra Danske Bank for {yr}..."):
-                    import os as _os
-                    from bank_sync import _auth_headers, get_session, fetch_transactions, normalize_transactions
+            with st.spinner(f"Henter transaktioner for {yr}..."):
+                # First try local database (already synced transactions)
+                db_rows = conn.execute(
+                    "SELECT date, description, amount FROM transactions "
+                    "WHERE date >= ? AND date <= ? ORDER BY date",
+                    (f"{yr}-01-01", f"{yr}-12-31"),
+                ).fetchall()
 
-                    session_id = _os.environ.get("ENABLEBANKING_SESSION_ID", "")
-                    if not session_id:
-                        st.error("Ingen banksession fundet. Kør 'python bank_sync.py --link' for at forbinde din bank.")
-                        return
-
-                    session = get_session(session_id)
-                    account_uids = session.get("accounts", [])
-                    if not account_uids:
-                        st.error("Ingen konti fundet i sessionen. Genforbind din bank med 'python bank_sync.py --link'.")
-                        return
-
-                    all_raw = []
-                    for uid in account_uids:
-                        acct_uid = uid if isinstance(uid, str) else uid.get("uid", "")
-                        if acct_uid:
-                            all_raw.extend(fetch_transactions(acct_uid, date_from=f"{yr}-01-01"))
-
-                    rows = normalize_transactions(all_raw)
-                    rows_year = [r for r in rows if r["date"].startswith(yr)]
-
-                    if not rows_year:
-                        st.warning(f"Ingen transaktioner fundet for {yr}. Tjek at din banksession stadig er aktiv.")
-                        return
-
+                if db_rows:
+                    rows_year = []
+                    for row in db_rows:
+                        rows_year.append({
+                            "date": row[0],
+                            "description": row[1],
+                            "amount": row[2],
+                        })
                     st.session_state[raw_key] = rows_year
-                    st.success(f"Hentet {len(rows_year)} transaktioner for {yr}.")
+                    st.success(f"Hentet {len(rows_year)} transaktioner for {yr} fra lokal database.")
+                else:
+                    # Fall back to API for recent data within consent window
+                    try:
+                        import os as _os
+                        from bank_sync import get_session, fetch_transactions, normalize_transactions
 
-            except RuntimeError as e:
-                st.error(f"Banksession udløbet eller ugyldig: {e}\n\nKør 'python bank_sync.py --link' for at genautentificere.")
-                return
-            except Exception as e:
-                st.error(f"Fejl ved hentning af transaktioner: {e}")
-                return
+                        session_id = _os.environ.get("ENABLEBANKING_SESSION_ID", "")
+                        if not session_id:
+                            st.error("Ingen transaktioner i databasen for {yr}, og ingen banksession fundet.\n\nSynkronisér først via 🏦 Danske Bank Sync i sidepanelet.")
+                            return
+
+                        session = get_session(session_id)
+                        account_uids = session.get("accounts", [])
+                        if not account_uids:
+                            st.error("Ingen konti fundet i sessionen. Genforbind din bank med 'python bank_sync.py --link'.")
+                            return
+
+                        all_raw = []
+                        for uid in account_uids:
+                            acct_uid = uid if isinstance(uid, str) else uid.get("uid", "")
+                            if acct_uid:
+                                all_raw.extend(fetch_transactions(acct_uid, date_from=f"{yr}-01-01"))
+
+                        rows = normalize_transactions(all_raw)
+                        rows_year = [r for r in rows if r["date"].startswith(yr)]
+
+                        if not rows_year:
+                            st.warning(f"Ingen transaktioner fundet for {yr}. Prøv at synkronisere via 🏦 Danske Bank Sync først.")
+                            return
+
+                        st.session_state[raw_key] = rows_year
+                        st.success(f"Hentet {len(rows_year)} transaktioner for {yr} fra banken.")
+
+                    except RuntimeError as e:
+                        st.error(f"Banksession udløbet eller ugyldig: {e}\n\nKør 'python bank_sync.py --link' for at genautentificere.")
+                        return
+                    except requests.exceptions.HTTPError as e:
+                        st.error(f"Banken afviste forespørgslen — sandsynligvis fordi {yr} ligger uden for din banksamtykkeperiode.\n\n"
+                                 f"Synkronisér først via 🏦 Danske Bank Sync i sidepanelet, så hentes transaktionerne fra den lokale database.")
+                        return
+                    except Exception as e:
+                        st.error(f"Fejl ved hentning af transaktioner: {e}")
+                        return
         else:
             st.info(f"Klik på knappen ovenfor for at hente dine {yr}-transaktioner fra Danske Bank.")
             return
