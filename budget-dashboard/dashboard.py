@@ -3810,7 +3810,7 @@ def _skat_categorize(description: str) -> str:
         for kw in keywords:
             if kw in desc_lower:
                 return category
-    return "Ukendt"
+    return "Ikke relevant"
 
 
 def _fmt_dkk(amount: float) -> str:
@@ -3903,41 +3903,66 @@ def render_skat_2024(conn):
                 "Beløb": tx["amount"],
                 "Kategori": skat_cat,
             })
-        # Sort: Ukendt first, then by category and date
-        editor_rows.sort(key=lambda r: (0 if r["Kategori"] == "Ukendt" else 1, r["Kategori"], r["Dato"]))
+        # Sort: tax-relevant categories first, Ukendt next, Ikke relevant last
+        def _sort_key(r):
+            cat = r["Kategori"]
+            if cat == "Ikke relevant":
+                return (2, cat, r["Dato"])
+            elif cat == "Ukendt":
+                return (0, cat, r["Dato"])
+            else:
+                return (1, cat, r["Dato"])
+        editor_rows.sort(key=_sort_key)
         st.session_state["skat_2024_editor_data"] = editor_rows
 
     editor_rows = st.session_state["skat_2024_editor_data"]
 
-    # Count unknowns
+    # Count categories
+    relevant_count = sum(1 for r in editor_rows if r["Kategori"] not in ("Ikke relevant", "Ukendt"))
     unknown_count = sum(1 for r in editor_rows if r["Kategori"] == "Ukendt")
+    irrelevant_count = sum(1 for r in editor_rows if r["Kategori"] == "Ikke relevant")
+
+    st.caption(f"{relevant_count} fradragsrelevante · {irrelevant_count} ikke-relevante · {len(editor_rows)} i alt")
     if unknown_count > 0:
-        st.warning(f"⚠️ {unknown_count} transaktioner kunne ikke kategoriseres automatisk. Gennemgå dem nedenfor.")
+        st.warning(f"⚠️ {unknown_count} transaktioner er markeret som 'Ukendt' — gennemgå dem nedenfor.")
 
-    df_editor = pd.DataFrame(editor_rows)
+    show_all = st.checkbox("Vis også ikke-relevante transaktioner", value=False, key="skat_show_all")
 
-    # Show data_editor
-    edited_df = st.data_editor(
-        df_editor,
-        column_config={
-            "Dato": st.column_config.TextColumn("Dato", disabled=True),
-            "Beskrivelse": st.column_config.TextColumn("Beskrivelse", width="large"),
-            "Beløb": st.column_config.NumberColumn("Beløb (DKK)", format="%.2f"),
-            "Kategori": st.column_config.SelectboxColumn(
-                "Kategori",
-                options=SKAT_CATEGORIES,
-                required=True,
-            ),
-        },
-        num_rows="dynamic",
-        use_container_width=True,
-        key="skat_2024_data_editor",
-    )
+    if show_all:
+        df_editor = pd.DataFrame(editor_rows)
+    else:
+        df_editor = pd.DataFrame([r for r in editor_rows if r["Kategori"] != "Ikke relevant"])
 
-    # Save edits back to session_state
-    if edited_df is not None:
-        st.session_state["skat_2024_editor_data"] = edited_df.to_dict("records")
-        editor_rows = st.session_state["skat_2024_editor_data"]
+    if df_editor.empty:
+        st.info("Ingen fradragsrelevante transaktioner fundet. Slå 'Vis også ikke-relevante transaktioner' til for at gennemgå alle.")
+    else:
+        # Show data_editor
+        edited_df = st.data_editor(
+            df_editor,
+            column_config={
+                "Dato": st.column_config.TextColumn("Dato", disabled=True),
+                "Beskrivelse": st.column_config.TextColumn("Beskrivelse", width="large"),
+                "Beløb": st.column_config.NumberColumn("Beløb (DKK)", format="%.2f"),
+                "Kategori": st.column_config.SelectboxColumn(
+                    "Kategori",
+                    options=SKAT_CATEGORIES,
+                    required=True,
+                ),
+            },
+            num_rows="dynamic",
+            use_container_width=True,
+            key="skat_2024_data_editor",
+        )
+
+        # Save edits back to session_state
+        if edited_df is not None:
+            # Merge edits: update shown rows, keep hidden "Ikke relevant" rows
+            if show_all:
+                st.session_state["skat_2024_editor_data"] = edited_df.to_dict("records")
+            else:
+                hidden = [r for r in editor_rows if r["Kategori"] == "Ikke relevant"]
+                st.session_state["skat_2024_editor_data"] = edited_df.to_dict("records") + hidden
+            editor_rows = st.session_state["skat_2024_editor_data"]
 
     # ── Section 3: Fradragsberegner ──
     st.markdown("---")
@@ -4082,12 +4107,19 @@ def render_skat_2024(conn):
 
         # Clipboard copy via JS
         import json as _json
-        escaped = _json.dumps(plain_text)
+        import base64 as _b64
+        b64_text = _b64.b64encode(plain_text.encode("utf-8")).decode("ascii")
         copy_html = f"""
-        <button onclick="navigator.clipboard.writeText({escaped}).then(
-            () => this.innerText = '✅ Kopieret!',
-            () => this.innerText = '❌ Kunne ikke kopiere'
-        )" style="
+        <script>
+        function copyFradrag() {{
+            var text = atob("{b64_text}");
+            navigator.clipboard.writeText(text).then(
+                function() {{ document.getElementById("copyBtn").innerText = "✅ Kopieret!"; }},
+                function() {{ document.getElementById("copyBtn").innerText = "❌ Kunne ikke kopiere"; }}
+            );
+        }}
+        </script>
+        <button id="copyBtn" onclick="copyFradrag()" style="
             padding: 0.5rem 1rem;
             background: #ff4b4b;
             color: white;
