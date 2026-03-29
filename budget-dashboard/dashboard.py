@@ -4021,12 +4021,14 @@ def render_aarsopgoerelse(conn):
 
     # Group transactions by category (exclude "Ikke relevant" and "Ukendt")
     cat_sums = {}
+    cat_txns = {}
     for row in editor_rows:
         cat = row.get("Kategori", "Ukendt")
         if cat in ("Ikke relevant", "Ukendt"):
             continue
         amt = abs(float(row.get("Beløb", 0)))
         cat_sums[cat] = cat_sums.get(cat, 0) + amt
+        cat_txns.setdefault(cat, []).append(row)
 
     fradrag_results = []
 
@@ -4057,11 +4059,17 @@ def render_aarsopgoerelse(conn):
         st.info("Renteudgifter er typisk allerede fortrykt af banken på skat.dk — dobbelttjek inden du indtaster.")
         fradrag_results.append(("Renteudgifter", "41", rente_sum))
         st.metric("Renteudgifter fra transaktioner", _fmt_dkk(rente_sum))
+        with st.expander(f"Vis {len(cat_txns.get('Renteudgifter', []))} transaktioner"):
+            st.dataframe(pd.DataFrame(cat_txns["Renteudgifter"])[["Dato", "Beskrivelse", "Beløb"]],
+                         use_container_width=True, hide_index=True)
 
     # ── Fagforening + A-kasse (Rubrik 52) ──
     fag_sum = cat_sums.get("Fagforening/A-kasse", 0)
     if fag_sum > 0:
         st.markdown("#### 🏛️ Fagforening & A-kasse (Rubrik 52)")
+        with st.expander(f"Vis {len(cat_txns.get('Fagforening/A-kasse', []))} transaktioner"):
+            st.dataframe(pd.DataFrame(cat_txns["Fagforening/A-kasse"])[["Dato", "Beskrivelse", "Beløb"]],
+                         use_container_width=True, hide_index=True)
         col_fag, col_akasse = st.columns(2)
         with col_fag:
             fagforening_andel = st.number_input(
@@ -4096,6 +4104,9 @@ def render_aarsopgoerelse(conn):
             st.caption(f"Donationer er begrænset til 18.300 kr. (registreret: {_fmt_dkk(donation_sum)})")
         fradrag_results.append(("Donationer", "53", donation_capped))
         st.metric("Donationer", _fmt_dkk(donation_capped))
+        with st.expander(f"Vis {len(cat_txns.get('Donationer', []))} transaktioner"):
+            st.dataframe(pd.DataFrame(cat_txns["Donationer"])[["Dato", "Beskrivelse", "Beløb"]],
+                         use_container_width=True, hide_index=True)
 
     # ── Håndværkerfradrag (Rubrik 460/480) ──
     haandvaerker_sum = cat_sums.get("Håndværkerfradrag", 0)
@@ -4107,6 +4118,9 @@ def render_aarsopgoerelse(conn):
             st.caption(f"Håndværkerfradrag er begrænset til 12.800 kr. (registreret: {_fmt_dkk(haandvaerker_sum)})")
         fradrag_results.append(("Håndværkerfradrag", "460/480", haandvaerker_capped))
         st.metric("Håndværkerfradrag", _fmt_dkk(haandvaerker_capped))
+        with st.expander(f"Vis {len(cat_txns.get('Håndværkerfradrag', []))} transaktioner"):
+            st.dataframe(pd.DataFrame(cat_txns["Håndværkerfradrag"])[["Dato", "Beskrivelse", "Beløb"]],
+                         use_container_width=True, hide_index=True)
 
     # ── Summary table ──
     if fradrag_results:
