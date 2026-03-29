@@ -3792,24 +3792,25 @@ SKAT_CATEGORIES = [
     "Ikke relevant",
 ]
 
+# Each rule is (compiled_regex, category). Use word boundaries (\b) for
+# short keywords that would otherwise cause false positives (e.g. "ida"
+# matching "Tidal", "hk" matching random strings, "ase" matching "chase").
 SKAT_CATEGORY_RULES = [
-    # (keywords list, category)
-    (["rente", "interest", "åop"], "Renteudgifter"),
-    (["3f", "hk", "ida", "djøf", "akademikerne", "ase", "dana", "a-kasse", "fagforening"], "Fagforening/A-kasse"),
-    (["røde kors", "unicef", "læger uden grænser", "red barnet", "folkekirkens nødhjælp", "velgøren"], "Donationer"),
-    (["vvs", "el-installatør", "maler", "tømrer", "håndværk", "rengøring", "blikkenslager"], "Håndværkerfradrag"),
-    (["dsb", "rejsekort", "flixbus", "flixtrain", "arriva"], "Transport"),
-    (["pension", "pka", "pfa", "industriens pension", "lærernes pension"], "Pension"),
+    # (regex_pattern, category)
+    (re.compile(r"rente|interest|åop", re.IGNORECASE), "Renteudgifter"),
+    (re.compile(r"\b3f\b|\bhk\b|\bida\b|djøf|akademikerne|\base\b|\bdana\b|a-kasse|fagforening", re.IGNORECASE), "Fagforening/A-kasse"),
+    (re.compile(r"røde kors|unicef|læger uden grænser|red barnet|folkekirkens nødhjælp|velgøren", re.IGNORECASE), "Donationer"),
+    (re.compile(r"vvs|el-installatør|maler|tømrer|håndværk|rengøring|blikkenslager", re.IGNORECASE), "Håndværkerfradrag"),
+    (re.compile(r"\bdsb\b|rejsekort|flixbus|flixtrain|arriva", re.IGNORECASE), "Transport"),
+    (re.compile(r"pension|\bpka\b|\bpfa\b|industriens pension|lærernes pension", re.IGNORECASE), "Pension"),
 ]
 
 
 def _skat_categorize(description: str) -> str:
     """Categorize a transaction description for tax purposes."""
-    desc_lower = description.lower()
-    for keywords, category in SKAT_CATEGORY_RULES:
-        for kw in keywords:
-            if kw in desc_lower:
-                return category
+    for pattern, category in SKAT_CATEGORY_RULES:
+        if pattern.search(description):
+            return category
     return "Ikke relevant"
 
 
