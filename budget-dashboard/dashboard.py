@@ -3888,6 +3888,22 @@ def render_skat_2024(conn):
 
     raw_txns = st.session_state["skat_2024_raw_txns"]
 
+    # ── KPI overview ──
+    total_income = sum(tx["amount"] for tx in raw_txns if tx["amount"] > 0)
+    total_expenses = sum(tx["amount"] for tx in raw_txns if tx["amount"] < 0)
+    net_result = total_income + total_expenses
+    tx_count = len(raw_txns)
+
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    with kpi1:
+        st.metric("Transaktioner", f"{tx_count:,}".replace(",", "."))
+    with kpi2:
+        st.metric("Indkomst", _fmt_dkk(total_income))
+    with kpi3:
+        st.metric("Udgifter", _fmt_dkk(abs(total_expenses)))
+    with kpi4:
+        st.metric("Netto", _fmt_dkk(net_result), delta=f"{net_result:+,.0f}".replace(",", "."))
+
     # ── Section 2: Auto-categorize ──
     st.markdown("---")
     st.subheader("2. Kategorisering af transaktioner")
