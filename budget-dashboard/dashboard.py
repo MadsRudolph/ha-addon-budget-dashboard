@@ -3798,7 +3798,7 @@ SKAT_CATEGORIES = [
 SKAT_CATEGORY_RULES = [
     # (regex_pattern, category)
     (re.compile(r"rente|interest|åop", re.IGNORECASE), "Renteudgifter"),
-    (re.compile(r"\b3f\b|\bhk\b|\bida\b|djøf|akademikerne|\base\b|\bdana\b|a-kasse|fagforening", re.IGNORECASE), "Fagforening/A-kasse"),
+    (re.compile(r"\b3f\b(?!.*feriepenge)|\bhk\b|\bida\b|djøf|akademikerne|\base\b|\bdana\b|a-kasse|fagforening", re.IGNORECASE), "Fagforening/A-kasse"),
     (re.compile(r"røde kors|unicef|læger uden grænser|red barnet|folkekirkens nødhjælp|velgøren", re.IGNORECASE), "Donationer"),
     (re.compile(r"vvs|el-installatør|maler|tømrer|håndværk|rengøring|blikkenslager", re.IGNORECASE), "Håndværkerfradrag"),
     (re.compile(r"\bdsb\b|rejsekort|flixbus|flixtrain|arriva", re.IGNORECASE), "Transport"),
