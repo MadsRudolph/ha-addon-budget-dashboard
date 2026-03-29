@@ -535,7 +535,7 @@ def main():
     with st.sidebar:
         st.markdown("## Navigation")
         page = st.radio("Go to",
-            ["Overview", "Analytics", "Income & Loan", "Snus Tracker", "Deals", "AI Advisor", "Achievements", "Settings"],
+            ["Overview", "Analytics", "Income & Loan", "Snus Tracker", "Deals", "AI Advisor", "Achievements", "Skat 2024", "Settings"],
             label_visibility="collapsed"
         )
         
@@ -667,6 +667,8 @@ def main():
         render_ai_insights(df_filtered, budgets_df, conn)
     elif page == "Achievements":
         render_achievements(df_filtered, achievements_df, budgets_df, budget_map, conn)
+    elif page == "Skat 2024":
+        render_skat_2024(conn)
     elif page == "Settings":
         render_settings(df, budgets_df, conn)
 
@@ -3775,6 +3777,329 @@ def render_settings(df, budgets_df, conn):
 
     st.markdown("---")
     st.caption("More settings (like tax rates and loan details) can be found on their respective pages.")
+
+
+# ──────────────────────────── Skat 2024 (Årsopgørelse) ────────────────────────────
+
+SKAT_CATEGORIES = [
+    "Renteudgifter",
+    "Fagforening/A-kasse",
+    "Donationer",
+    "Håndværkerfradrag",
+    "Transport",
+    "Pension",
+    "Ukendt",
+    "Ikke relevant",
+]
+
+SKAT_CATEGORY_RULES = [
+    # (keywords list, category)
+    (["rente", "interest", "åop"], "Renteudgifter"),
+    (["3f", "hk", "ida", "djøf", "akademikerne", "ase", "dana", "a-kasse", "fagforening"], "Fagforening/A-kasse"),
+    (["røde kors", "unicef", "læger uden grænser", "red barnet", "folkekirkens nødhjælp", "velgøren"], "Donationer"),
+    (["vvs", "el-installatør", "maler", "tømrer", "håndværk", "rengøring", "blikkenslager"], "Håndværkerfradrag"),
+    (["dsb", "rejsekort", "flixbus", "flixtrain", "arriva"], "Transport"),
+    (["pension", "pka", "pfa", "industriens pension", "lærernes pension"], "Pension"),
+]
+
+
+def _skat_categorize(description: str) -> str:
+    """Categorize a transaction description for tax purposes."""
+    desc_lower = description.lower()
+    for keywords, category in SKAT_CATEGORY_RULES:
+        for kw in keywords:
+            if kw in desc_lower:
+                return category
+    return "Ukendt"
+
+
+def _fmt_dkk(amount: float) -> str:
+    """Format amount as Danish locale: 1.234,56 kr."""
+    sign = "-" if amount < 0 else ""
+    abs_val = abs(amount)
+    integer_part = int(abs_val)
+    decimal_part = round((abs_val - integer_part) * 100)
+    # Thousands separator
+    int_str = f"{integer_part:,}".replace(",", ".")
+    return f"{sign}{int_str},{decimal_part:02d} kr."
+
+
+def render_skat_2024(conn):
+    st.header("🧾 Skat 2024 — Årsopgørelse")
+    st.caption("Hent dine Danske Bank-transaktioner for 2024 og beregn dine fradrag til årsopgørelsen.")
+
+    # ── Section 1: Fetch transactions ──
+    st.subheader("1. Hent transaktioner")
+
+    col_fetch, col_refresh = st.columns([3, 1])
+    with col_fetch:
+        fetch_clicked = st.button("Hent 2024-transaktioner fra Danske Bank", type="primary",
+                                  use_container_width=True, key="skat_fetch_btn")
+    with col_refresh:
+        refresh_clicked = st.button("🔄 Genindlæs", use_container_width=True, key="skat_refresh_btn")
+
+    if fetch_clicked or refresh_clicked:
+        st.session_state.pop("skat_2024_raw_txns", None)
+
+    if "skat_2024_raw_txns" not in st.session_state:
+        if fetch_clicked or refresh_clicked:
+            try:
+                with st.spinner("Henter transaktioner fra Danske Bank for 2024..."):
+                    import os as _os
+                    from bank_sync import _auth_headers, get_session, fetch_transactions, normalize_transactions
+
+                    session_id = _os.environ.get("ENABLEBANKING_SESSION_ID", "")
+                    if not session_id:
+                        st.error("Ingen banksession fundet. Kør 'python bank_sync.py --link' for at forbinde din bank.")
+                        return
+
+                    session = get_session(session_id)
+                    account_uids = session.get("accounts", [])
+                    if not account_uids:
+                        st.error("Ingen konti fundet i sessionen. Genforbind din bank med 'python bank_sync.py --link'.")
+                        return
+
+                    all_raw = []
+                    for uid in account_uids:
+                        acct_uid = uid if isinstance(uid, str) else uid.get("uid", "")
+                        if acct_uid:
+                            all_raw.extend(fetch_transactions(acct_uid, date_from="2024-01-01"))
+
+                    rows = normalize_transactions(all_raw)
+                    # Filter to 2024 only
+                    rows_2024 = [r for r in rows if r["date"].startswith("2024")]
+
+                    if not rows_2024:
+                        st.warning("Ingen transaktioner fundet for 2024. Tjek at din banksession stadig er aktiv.")
+                        return
+
+                    st.session_state["skat_2024_raw_txns"] = rows_2024
+                    st.success(f"Hentet {len(rows_2024)} transaktioner for 2024.")
+
+            except RuntimeError as e:
+                st.error(f"Banksession udløbet eller ugyldig: {e}\n\nKør 'python bank_sync.py --link' for at genautentificere.")
+                return
+            except Exception as e:
+                st.error(f"Fejl ved hentning af transaktioner: {e}")
+                return
+        else:
+            st.info("Klik på knappen ovenfor for at hente dine 2024-transaktioner fra Danske Bank.")
+            return
+
+    raw_txns = st.session_state["skat_2024_raw_txns"]
+
+    # ── Section 2: Auto-categorize ──
+    st.markdown("---")
+    st.subheader("2. Kategorisering af transaktioner")
+
+    # Build initial categorized data if not already in session_state
+    if "skat_2024_editor_data" not in st.session_state:
+        editor_rows = []
+        for tx in raw_txns:
+            skat_cat = _skat_categorize(tx["description"])
+            editor_rows.append({
+                "Dato": tx["date"],
+                "Beskrivelse": tx["description"],
+                "Beløb": tx["amount"],
+                "Kategori": skat_cat,
+            })
+        # Sort: Ukendt first, then by category and date
+        editor_rows.sort(key=lambda r: (0 if r["Kategori"] == "Ukendt" else 1, r["Kategori"], r["Dato"]))
+        st.session_state["skat_2024_editor_data"] = editor_rows
+
+    editor_rows = st.session_state["skat_2024_editor_data"]
+
+    # Count unknowns
+    unknown_count = sum(1 for r in editor_rows if r["Kategori"] == "Ukendt")
+    if unknown_count > 0:
+        st.warning(f"⚠️ {unknown_count} transaktioner kunne ikke kategoriseres automatisk. Gennemgå dem nedenfor.")
+
+    df_editor = pd.DataFrame(editor_rows)
+
+    # Show data_editor
+    edited_df = st.data_editor(
+        df_editor,
+        column_config={
+            "Dato": st.column_config.TextColumn("Dato", disabled=True),
+            "Beskrivelse": st.column_config.TextColumn("Beskrivelse", width="large"),
+            "Beløb": st.column_config.NumberColumn("Beløb (DKK)", format="%.2f"),
+            "Kategori": st.column_config.SelectboxColumn(
+                "Kategori",
+                options=SKAT_CATEGORIES,
+                required=True,
+            ),
+        },
+        num_rows="dynamic",
+        use_container_width=True,
+        key="skat_2024_data_editor",
+    )
+
+    # Save edits back to session_state
+    if edited_df is not None:
+        st.session_state["skat_2024_editor_data"] = edited_df.to_dict("records")
+        editor_rows = st.session_state["skat_2024_editor_data"]
+
+    # ── Section 3: Fradragsberegner ──
+    st.markdown("---")
+    st.subheader("3. Fradragsberegner")
+
+    # Group transactions by category (exclude "Ikke relevant" and "Ukendt")
+    cat_sums = {}
+    for row in editor_rows:
+        cat = row.get("Kategori", "Ukendt")
+        if cat in ("Ikke relevant", "Ukendt"):
+            continue
+        amt = abs(float(row.get("Beløb", 0)))
+        cat_sums[cat] = cat_sums.get(cat, 0) + amt
+
+    fradrag_results = []
+
+    # ── Befordringsfradrag (Rubrik 51) ──
+    st.markdown("#### 🚗 Befordringsfradrag (Rubrik 51)")
+    col_km, col_days = st.columns(2)
+    with col_km:
+        km_en_vej = st.number_input("Km én vej til arbejde", min_value=0, value=0, step=1, key="skat_km")
+    with col_days:
+        arbejdsdage = st.number_input("Antal arbejdsdage i 2024", min_value=0, value=220, step=1, key="skat_dage")
+
+    if km_en_vej > 0 and arbejdsdage > 0:
+        daglig_retur = km_en_vej * 2
+        if daglig_retur > 24:
+            km_25_120 = min(daglig_retur, 120) - 24
+            km_over_120 = max(daglig_retur - 120, 0)
+            dagligt_fradrag = km_25_120 * 2.23 + km_over_120 * 1.12
+            befordring_total = dagligt_fradrag * arbejdsdage
+            fradrag_results.append(("Befordringsfradrag", "51", befordring_total))
+            st.metric("Befordringsfradrag", _fmt_dkk(befordring_total))
+        else:
+            st.info("Ingen fradrag — afstanden er under 24 km tur/retur pr. dag.")
+
+    # ── Renteudgifter (Rubrik 41) ──
+    rente_sum = cat_sums.get("Renteudgifter", 0)
+    if rente_sum > 0:
+        st.markdown("#### 💳 Renteudgifter (Rubrik 41)")
+        st.info("Renteudgifter er typisk allerede fortrykt af banken på skat.dk — dobbelttjek inden du indtaster.")
+        fradrag_results.append(("Renteudgifter", "41", rente_sum))
+        st.metric("Renteudgifter fra transaktioner", _fmt_dkk(rente_sum))
+
+    # ── Fagforening + A-kasse (Rubrik 52) ──
+    fag_sum = cat_sums.get("Fagforening/A-kasse", 0)
+    if fag_sum > 0:
+        st.markdown("#### 🏛️ Fagforening & A-kasse (Rubrik 52)")
+        col_fag, col_akasse = st.columns(2)
+        with col_fag:
+            fagforening_andel = st.number_input(
+                "Fagforeningskontingent (DKK)",
+                min_value=0.0,
+                value=min(fag_sum, 6000.0),
+                step=100.0,
+                key="skat_fagforening",
+                help=f"Samlet registreret: {_fmt_dkk(fag_sum)}. Opdel manuelt mellem fagforening og a-kasse.",
+            )
+        with col_akasse:
+            akasse_andel = st.number_input(
+                "A-kasse (DKK)",
+                min_value=0.0,
+                value=max(fag_sum - min(fag_sum, 6000.0), 0.0),
+                step=100.0,
+                key="skat_akasse",
+            )
+        fagforening_capped = min(fagforening_andel, 6000)
+        fag_total = fagforening_capped + akasse_andel
+        if fagforening_andel > 6000:
+            st.caption(f"Fagforeningskontingent er begrænset til 6.000 kr. (du indtastede {_fmt_dkk(fagforening_andel)})")
+        fradrag_results.append(("Fagforening & A-kasse", "52", fag_total))
+        st.metric("Fagforening & A-kasse fradrag", _fmt_dkk(fag_total))
+
+    # ── Donationer (Rubrik 53) ──
+    donation_sum = cat_sums.get("Donationer", 0)
+    if donation_sum > 0:
+        st.markdown("#### ❤️ Donationer (Rubrik 53)")
+        donation_capped = min(donation_sum, 18300)
+        if donation_sum > 18300:
+            st.caption(f"Donationer er begrænset til 18.300 kr. (registreret: {_fmt_dkk(donation_sum)})")
+        fradrag_results.append(("Donationer", "53", donation_capped))
+        st.metric("Donationer", _fmt_dkk(donation_capped))
+
+    # ── Håndværkerfradrag (Rubrik 460/480) ──
+    haandvaerker_sum = cat_sums.get("Håndværkerfradrag", 0)
+    if haandvaerker_sum > 0:
+        st.markdown("#### 🔧 Håndværkerfradrag (Rubrik 460/480)")
+        st.warning("Håndværkerfradrag er et skattenedslag (ikke et ligningsmæssigt fradrag) — kun arbejdsløn tæller, ikke materialer.")
+        haandvaerker_capped = min(haandvaerker_sum, 12800)
+        if haandvaerker_sum > 12800:
+            st.caption(f"Håndværkerfradrag er begrænset til 12.800 kr. (registreret: {_fmt_dkk(haandvaerker_sum)})")
+        fradrag_results.append(("Håndværkerfradrag", "460/480", haandvaerker_capped))
+        st.metric("Håndværkerfradrag", _fmt_dkk(haandvaerker_capped))
+
+    # ── Summary table ──
+    if fradrag_results:
+        st.markdown("---")
+        st.subheader("Opsummering af fradrag")
+
+        summary_df = pd.DataFrame(fradrag_results, columns=["Fradrag", "Rubrik", "Beløb (DKK)"])
+        total_fradrag = summary_df["Beløb (DKK)"].sum()
+
+        st.dataframe(
+            summary_df.style.format({"Beløb (DKK)": lambda x: _fmt_dkk(x)}),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        col_total, col_tax = st.columns(2)
+        with col_total:
+            st.metric("Samlet ligningsmæssige fradrag", _fmt_dkk(total_fradrag))
+        with col_tax:
+            estimated_saving = total_fradrag * 0.33
+            st.metric(
+                "Estimeret skattebesparelse",
+                _fmt_dkk(estimated_saving),
+                help="Vejledende, baseret på 33% marginalskat",
+            )
+        st.caption("Estimeret skattebesparelse (vejledende, baseret på 33% marginalskat)")
+
+        # ── Section 4: Export ──
+        st.markdown("---")
+        st.subheader("4. Eksport til årsopgørelsen")
+
+        for name, rubrik, beloeb in fradrag_results:
+            st.markdown(f"""
+**{name}**
+- Rubrik: {rubrik}
+- Beløb der skal indtastes: **{_fmt_dkk(beloeb)}**
+""")
+
+        # Build plain-text version
+        lines = ["Fradrag til årsopgørelsen 2024", "=" * 35, ""]
+        for name, rubrik, beloeb in fradrag_results:
+            lines.append(f"{name}")
+            lines.append(f"  Rubrik: {rubrik}")
+            lines.append(f"  Beløb: {_fmt_dkk(beloeb)}")
+            lines.append("")
+        lines.append(f"Samlet fradrag: {_fmt_dkk(total_fradrag)}")
+        lines.append(f"Estimeret skattebesparelse (~33%): {_fmt_dkk(estimated_saving)}")
+        plain_text = "\n".join(lines)
+
+        # Clipboard copy via JS
+        import json as _json
+        escaped = _json.dumps(plain_text)
+        copy_html = f"""
+        <button onclick="navigator.clipboard.writeText({escaped}).then(
+            () => this.innerText = '✅ Kopieret!',
+            () => this.innerText = '❌ Kunne ikke kopiere'
+        )" style="
+            padding: 0.5rem 1rem;
+            background: #ff4b4b;
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-size: 1rem;
+        ">📋 Kopiér som tekst</button>
+        """
+        st.components.v1.html(copy_html, height=50)
+    else:
+        st.info("Ingen fradrag fundet endnu. Hent transaktioner og kategorisér dem ovenfor.")
 
 
 if __name__ == "__main__":
